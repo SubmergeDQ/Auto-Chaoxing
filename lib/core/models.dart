@@ -83,6 +83,7 @@ class TaskPoint {
     this.attDuration = '0',
     this.attDurationEnc = '',
     this.videoFaceCaptureEnc = '',
+    this.passed,
   });
 
   final String type; // video / document / workid / read / live
@@ -95,7 +96,20 @@ class TaskPoint {
   final String attDurationEnc;
   final String videoFaceCaptureEnc;
 
+  /// 卡片里给出的「已通过」标记。null 表示卡片没给这个字段（语义待真实账号确认），
+  /// 不能当 false 用——没给只代表我们不知道，不代表平台没通过。
+  final bool? passed;
+
   bool get isVideo => type == 'video' && objectId.isNotEmpty;
+
+  /// 平台记录的累计观看秒数（来自卡片 `attDuration`）。
+  ///
+  /// 用途只有一个：有值时从这一段继续上报，省掉已经看过的部分。字段为 0 或解析失败时
+  /// 行为与从前一致（从 0 开始），因此它是纯增益的，不依赖这个字段一定存在。
+  int get watchedSeconds => int.tryParse(attDuration.trim()) ?? 0;
+
+  /// 是否具备续跑依据：平台说看了一部分，但还不能确定已通过。
+  bool get canResume => passed != true && watchedSeconds > 0;
 }
 
 /// knowledge/cards 返回的 defaults。

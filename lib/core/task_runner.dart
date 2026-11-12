@@ -55,11 +55,23 @@ class VideoRunnerResult {
     required this.completed,
     required this.failed,
     required this.message,
+    this.skipped = const <String>[],
+    this.resumed = const <String>[],
   });
 
   final TaskPhase phase;
+  /// 本次真的发起了上报并拿到 `isPassed: true` 的任务点。
   final List<String> completed;
+
+  /// 跑完仍未通过的任务点。
   final List<String> failed;
+
+  /// 平台已标记通过、本次直接跳过的任务点。
+  final List<String> skipped;
+
+  /// 从平台累计时长继续（而不是从 0）的任务点。
+  final List<String> resumed;
+
   final String message;
 }
 
@@ -103,6 +115,8 @@ class TaskRunner {
     _stopRequested = false;
     final List<String> completed = <String>[];
     final List<String> failed = <String>[];
+    final List<String> skipped = <String>[];
+    final List<String> resumed = <String>[];
 
     _emit(const TaskProgress(phase: TaskPhase.preparing, message: '读取章节卡片…'));
 
@@ -152,11 +166,28 @@ class TaskRunner {
           phase: TaskPhase.stopped,
           completed: completed,
           failed: failed,
+          skipped: skipped,
+          resumed: resumed,
           message: '已停止，可从断点继续',
         );
       }
 
       final TaskPoint point = videos[i];
+
+      // 平台已标记通过的整段跳过：重跑一章时不再白刷一遍。
+      // 只有明确 true 才跳，null / false 都照常执行（卡片没给字段时不能猜）。
+      if (point.passed == true) {
+        skipped.add(point.name);
+        _log('跳过：${point.name}（平台已标记通过）');
+        _emit(TaskProgress(
+          phase: TaskPhase.running,
+          current: point.name,
+          done: i + 1,
+          total: videos.length,
+        ));
+        continue;
+      }
+
       _log('开始：${point.name}');
       _emit(TaskProgress(
         phase: TaskPhase.running,
@@ -173,6 +204,13 @@ class TaskRunner {
       }
       final VideoStatus vs = (status as Ok<VideoStatus>).value;
 
+      // 续跑依据：卡片里的累计观看时长。有则从这一段接着报，没有就从 0 走。
+      final int startAt = point.canResume ? _clampSecond(point.watchedSeconds, vs.duration) : 0;
+      if (startAt > 0) {
+        resumed.add(point.name);
+        _log('从 ${_span(startAt)} 继续：${point.name}（卡片累计时长）');
+      }
+
       final Result<bool> r = await _watchOne(
         report: data.reportUrl,
         dtoken: vs.dtoken,
@@ -180,6 +218,7 @@ class TaskRunner {
         classId: course.classId,
         uid: uid,
         duration: vs.duration,
+        startAt: startAt,
       );
 
       switch (r) {
@@ -203,6 +242,8 @@ class TaskRunner {
               phase: TaskPhase.stopped,
               completed: completed,
               failed: failed,
+              skipped: skipped,
+              resumed: resumed,
               message: '已停止，可从断点继续',
             );
           }
@@ -222,6 +263,8 @@ class TaskRunner {
               phase: TaskPhase.needsAttention,
               completed: completed,
               failed: failed,
+              skipped: skipped,
+              resumed: resumed,
               message: message,
             );
           }
@@ -234,7 +277,11 @@ class TaskRunner {
     }
 
     final bool allOk = failed.isEmpty;
-    final String summary = '${completed.length} / ${videos.length} 个任务点已通过';
+    final int passedCount = completed.length + skipped.length;
+    final String summary = '$passedCount / ${videos.length} 个任务点已通过';
+    if (skipped.isNotEmpty) {
+      _log('其中 ${skipped.length} 个平台已通过，本次跳过', level: 'trace');
+    }
     _log(
       '结束：$summary${failed.isEmpty ? '' : '，${failed.length} 个未通过'}',
       level: allOk ? 'info' : 'warn',
@@ -249,6 +296,8 @@ class TaskRunner {
       phase: allOk ? TaskPhase.succeeded : TaskPhase.failed,
       completed: completed,
       failed: failed,
+      skipped: skipped,
+      resumed: resumed,
       message: summary,
     );
   }
@@ -260,10 +309,12 @@ class TaskRunner {
     required String classId,
     required String uid,
     required int duration,
+    int startAt = 0,
   }) async {
-    int playTime = 0;
     int errors = 0;
     const int step = 60; // 秒
+    // 起点来自卡片累计时长；夹紧到 [0, duration]，越界就退回从头开始。
+    int playTime = _clampSecond(startAt, duration);
 
     while (true) {
       if (_stopRequested) return const Err<bool>('stopped', '已停止');
@@ -306,4 +357,10 @@ class TaskRunner {
 String _span(int seconds) {
   final int safe = seconds < 0 ? 0 : seconds;
   return '${safe ~/ 60}:${(safe % 60).toString().padLeft(2, '0')}';
+}
+
+/// 夹紧到 [0, max]。不用 `clamp` 是因为它返回 num，还要再转一次类型。
+int _clampSecond(int value, int max) {
+  if (value < 0) return 0;
+  return value > max ? max : value;
 }

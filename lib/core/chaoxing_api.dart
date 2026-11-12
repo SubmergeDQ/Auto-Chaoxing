@@ -251,6 +251,9 @@ class ChaoxingApi {
             attDuration: '${att['attDuration'] ?? '0'}',
             attDurationEnc: '${att['attDurationEnc'] ?? ''}',
             videoFaceCaptureEnc: '${att['videoFaceCaptureEnc'] ?? ''}',
+            // 已通过标记：卡片给了就用，没给就留 null（不猜）。
+            // 语义待真实账号确认，因此上层只在明确 true 时跳过，null / false 都照常执行。
+            passed: _readPassed(att, prop),
           ),
         );
       }
@@ -362,6 +365,19 @@ class ChaoxingApi {
       _authExpiredMarkers.any((String m) => body.contains(m));
 
   static bool _isDigits(String s) => s.isNotEmpty && int.tryParse(s) != null;
+
+  /// 读取任务点的「已通过」标记。
+  ///
+  /// 已知的候选位置只有 `isPassed`（attachments 级或 property 级）。字段名未经真实账号
+  /// 确认，所以这里只认明确的 true，其余一律返回 null——让上层按「不知道」处理而不是按
+  /// 「未通过」处理，避免猜测导致整章重复执行。
+  static bool? _readPassed(Map<String, dynamic> att, Map<String, dynamic> prop) {
+    for (final dynamic v in <dynamic>[att['isPassed'], prop['isPassed']]) {
+      if (v == true) return true;
+      if ('$v' == '1') return true;
+    }
+    return null;
+  }
 
   static Map<String, dynamic>? _tryJson(String? body) {
     if (body == null || body.isEmpty) return null;
