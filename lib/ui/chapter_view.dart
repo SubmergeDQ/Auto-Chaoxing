@@ -464,6 +464,10 @@ class _RunFooter extends StatelessWidget {
     final bool busy = state.run.busy;
     final bool canRun = !archived && !busy && state.signedIn;
 
+    // 重跑一章时把「会跳过什么」提前说清：用户看到任务点没动，也有据可查。
+    final int passedCount = videos.where((TaskPoint p) => p.passed == true).length;
+    final int resumeCount = videos.where((TaskPoint p) => p.canResume).length;
+
     final String hint;
     if (archived) {
       hint = '已归档课程不能执行';
@@ -472,7 +476,12 @@ class _RunFooter extends StatelessWidget {
     } else if (busy) {
       hint = '已有章节在执行，结束后可以再开始';
     } else {
-      hint = '${videos.length} 个视频任务点 · 耗时与视频总长相近';
+      final List<String> notes = <String>[
+        if (passedCount > 0) '$passedCount 个平台已通过将跳过',
+        if (resumeCount > 0) '$resumeCount 个从中间继续',
+        if (passedCount == 0 && resumeCount == 0) '耗时与视频总长相近',
+      ];
+      hint = '${videos.length} 个视频任务点 · ${notes.join('，')}';
     }
 
     return Padding(

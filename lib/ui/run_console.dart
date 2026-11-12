@@ -39,7 +39,8 @@ Future<void> startChapterRun(
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AcxColors.textPrimary),
       ),
       content: Text(
-        '$scope耗时与视频总长相近，期间可以随时停止。\n\n'
+        '$scope执行时平台已通过的会跳过、已看过的从中间继续，'
+        '耗时与视频总长相近，期间可以随时停止。\n\n'
         '遇到人脸抽检、验证码或登录失效会立即停止，交回你自己处理。',
         style: const TextStyle(fontSize: 13, height: 1.6, color: AcxColors.textSecondary),
       ),
