@@ -6,15 +6,27 @@ import 'package:flutter/material.dart';
 
 import '../core/crypto.dart';
 import '../state/app_state.dart';
+import '../state/keep_alive_probe.dart';
 import 'courses_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-class SelfCheckPage extends StatelessWidget {
-  const SelfCheckPage({super.key});
+class SelfCheckPage extends StatefulWidget {
+  const SelfCheckPage({super.key, required this.probe});
 
+  /// 自检的生命周期由 AppState 持有：页面只是显示它。
+  /// 这样切页、锁屏回来都不会把已经跑了一半的计时丢掉。
+  final KeepAliveProbe probe;
+
+  @override
+  State<SelfCheckPage> createState() => _SelfCheckPageState();
+}
+
+class _SelfCheckPageState extends State<SelfCheckPage> {
   static const String _aesExpect = 'FiK1hSgSEgMeqWPSRhRB+A==';
   static const String _encExpect = 'f72245dce1271d7e6039a4f3110a0575';
+
+  KeepAliveProbe get _probe => widget.probe;
 
   @override
   Widget build(BuildContext context) {
@@ -74,9 +86,168 @@ class SelfCheckPage extends StatelessWidget {
             '自检只在本机计算，不发送任何请求；结果由当前客户端实际运行得出，未执行时不会显示通过。',
             style: TextStyle(fontSize: 12, height: 1.7, color: AcxColors.textTertiary),
           ),
+          if (_probe.supported) ...<Widget>[
+            const SizedBox(height: AcxSpacing.xxl),
+            const Text(
+              '运行环境',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AcxColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: AcxSpacing.md),
+            AnimatedBuilder(
+              animation: _probe,
+              builder: (BuildContext context, Widget? _) => _KeepAliveCard(probe: _probe),
+            ),
+          ],
         ],
       ),
     );
+  }
+}
+
+/// 后台保活自检。纯本地计时，用来判断熄屏后系统有没有把计时押后。
+class _KeepAliveCard extends StatelessWidget {
+  const _KeepAliveCard({required this.probe});
+
+  final KeepAliveProbe probe;
+
+  @override
+  Widget build(BuildContext context) {
+    final ProbePhase phase = probe.phase;
+    final AcxStatus badge = switch (phase) {
+      ProbePhase.idle => AcxStatus.idle,
+      ProbePhase.running => AcxStatus.running,
+      ProbePhase.done => probe.continuous ? AcxStatus.success : AcxStatus.attention,
+    };
+    final String label = switch (phase) {
+      ProbePhase.idle => '未开始',
+      ProbePhase.running => '计时中',
+      ProbePhase.done => probe.continuous ? '计时连续' : '计时被押后',
+    };
+
+    return AcxSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      '后台保活',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AcxColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      phase == ProbePhase.idle
+                          ? '熄屏后计时还在不在走。点开始后锁屏 ${probe.total.inMinutes} 分钟再回来，看心跳是否连贯。'
+                          : _detail(phase),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.6,
+                        color: AcxColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AcxSpacing.lg),
+              AcxStatusBadge(label: label, status: badge),
+            ],
+          ),
+          if (phase != ProbePhase.idle) ...<Widget>[
+            const SizedBox(height: AcxSpacing.lg),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AcxRadius.sm),
+              child: LinearProgressIndicator(
+                value: _ratio,
+                minHeight: 4,
+                backgroundColor: AcxColors.border,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  phase == ProbePhase.done && !probe.continuous
+                      ? AcxColors.warning
+                      : AcxColors.brand,
+                ),
+              ),
+            ),
+            const SizedBox(height: AcxSpacing.sm),
+            Text(
+              '${_clock(probe.elapsed)} / ${_clock(probe.total)} · '
+              '心跳 ${probe.ticks} 次 · 最长间隔 ${probe.maxGap.inSeconds} 秒',
+              style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
+            ),
+          ],
+          if (phase == ProbePhase.done) ...<Widget>[
+            const SizedBox(height: AcxSpacing.md),
+            Text(
+              probe.verdict,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
+                color: probe.continuous ? AcxColors.success : AcxColors.warning,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '这个结果只说明计时有没有被打断：刚才若真的熄屏过，说明前台服务与唤醒锁生效；'
+              '若全程亮屏，它只证明前台计时正常，不代表熄屏可用。',
+              style: TextStyle(fontSize: 12, height: 1.7, color: AcxColors.textTertiary),
+            ),
+          ],
+          const SizedBox(height: AcxSpacing.lg),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: switch (phase) {
+              ProbePhase.idle => FilledButton(
+                  onPressed: () => unawaited(probe.start()),
+                  child: const Text('开始自检'),
+                ),
+              ProbePhase.running => OutlinedButton(
+                  onPressed: () => unawaited(probe.stop()),
+                  child: const Text('停止自检'),
+                ),
+              ProbePhase.done => TextButton.icon(
+                  onPressed: () => unawaited(probe.start()),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('重新自检'),
+                  style: TextButton.styleFrom(foregroundColor: AcxColors.textSecondary),
+                ),
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  double get _ratio {
+    final int total = probe.total.inSeconds;
+    if (total <= 0) return 0;
+    final double r = probe.elapsed.inSeconds / total;
+    return r.clamp(0, 1);
+  }
+
+  String _detail(ProbePhase phase) {
+    if (phase == ProbePhase.running) {
+      return probe.keeping
+          ? '已挂上前台服务与唤醒锁，现在可以锁屏。'
+          : '保活没有起来，这次熄屏后计时很可能会被暂停。';
+    }
+    return '自检结束。每次心跳间隔 ${probe.step.inSeconds} 秒，超过 ${probe.step.inSeconds * 2} 秒就算中断。';
+  }
+
+  static String _clock(Duration d) {
+    final int s = d.inSeconds;
+    return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
   }
 }
 

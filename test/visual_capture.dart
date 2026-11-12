@@ -9,12 +9,15 @@ import 'dart:typed_data';
 import 'package:auto_chaoxing/core/models.dart';
 import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/main.dart';
+import 'package:auto_chaoxing/platform/platform_services.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
+import 'package:auto_chaoxing/state/keep_alive_probe.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_api.dart';
+import 'support/fake_run_keeper.dart';
 
 const String _cnFontFamily = 'AcxCjk';
 
@@ -45,14 +48,14 @@ void main() {
       tester: tester,
       name: 'desktop-empty',
       size: const Size(1440, 900),
-      state: AppState(api: FakeChaoxingApi()),
+      state: AppState(api: FakeChaoxingApi(), runKeeper: const NoopRunKeeper()),
       fontFamily: family,
     );
     await capture(
       tester: tester,
       name: 'desktop-login',
       size: const Size(1440, 900),
-      state: AppState(api: FakeChaoxingApi()),
+      state: AppState(api: FakeChaoxingApi(), runKeeper: const NoopRunKeeper()),
       fontFamily: family,
       showLoginDialog: true,
     );
@@ -60,7 +63,10 @@ void main() {
       tester: tester,
       name: 'desktop-login-error',
       size: const Size(1440, 900),
-      state: AppState(api: FakeChaoxingApi(loginError: '密码错误，请检查后重试')),
+      state: AppState(
+        api: FakeChaoxingApi(loginError: '密码错误，请检查后重试'),
+        runKeeper: const NoopRunKeeper(),
+      ),
       fontFamily: family,
       fillLoginAndSubmit: true,
     );
@@ -69,6 +75,47 @@ void main() {
       name: 'desktop-selfcheck',
       size: const Size(1440, 900),
       state: signedInState(),
+      fontFamily: family,
+      page: 2,
+    );
+    // 自检卡的三种状态：计时中、计时连续、计时被押后。
+    await capture(
+      tester: tester,
+      name: 'desktop-selfcheck-probe-running',
+      size: const Size(1440, 900),
+      state: probeState(
+        phase: ProbePhase.running,
+        ticks: 7,
+        maxGap: const Duration(seconds: 15),
+        elapsed: const Duration(minutes: 1, seconds: 45),
+        keeping: true,
+      ),
+      fontFamily: family,
+      page: 2,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-selfcheck-probe-done',
+      size: const Size(1440, 900),
+      state: probeState(
+        phase: ProbePhase.done,
+        ticks: 12,
+        maxGap: const Duration(seconds: 15),
+        elapsed: const Duration(minutes: 3),
+      ),
+      fontFamily: family,
+      page: 2,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-selfcheck-probe-interrupted',
+      size: const Size(1440, 900),
+      state: probeState(
+        phase: ProbePhase.done,
+        ticks: 11,
+        maxGap: const Duration(seconds: 75),
+        elapsed: const Duration(minutes: 3),
+      ),
       fontFamily: family,
       page: 2,
     );
@@ -250,7 +297,7 @@ void main() {
       tester: tester,
       name: 'mobile-empty',
       size: const Size(390, 844),
-      state: AppState(api: FakeChaoxingApi()),
+      state: AppState(api: FakeChaoxingApi(), runKeeper: const NoopRunKeeper()),
       fontFamily: family,
     );
   });
@@ -308,6 +355,8 @@ AppState signedInState({String? cardsErrorCode}) {
       points: kDemoPoints,
       cardsErrorCode: cardsErrorCode,
     ),
+    // 用 supported=true 的替身：真机上自检页有保活卡片，截图必须一致。
+    runKeeper: RunKeeperStub(),
   );
   state.profile = kDemoProfile;
   state.coursesState = LoadState.ready;
@@ -315,6 +364,25 @@ AppState signedInState({String? cardsErrorCode}) {
   state.selectedCourse = kDemoCourses.first;
   state.chaptersState = LoadState.ready;
   state.chapters = kDemoChapters;
+  return state;
+}
+
+/// 把保活自检摆成确定的状态，便于拍「计时中 / 连续 / 被押后」三张。
+AppState probeState({
+  required ProbePhase phase,
+  int ticks = 0,
+  Duration maxGap = Duration.zero,
+  Duration elapsed = Duration.zero,
+  bool keeping = false,
+}) {
+  final AppState state = signedInState();
+  state.probe.seedForPreview(
+    phase: phase,
+    ticks: ticks,
+    maxGap: maxGap,
+    elapsed: elapsed,
+    keeping: keeping,
+  );
   return state;
 }
 

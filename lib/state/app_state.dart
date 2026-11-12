@@ -5,19 +5,39 @@ import 'package:flutter/foundation.dart';
 
 import '../core/chaoxing_api.dart';
 import '../core/models.dart';
+import '../platform/platform_services.dart';
+import '../platform/run_keeper_android.dart';
+import 'keep_alive_probe.dart';
 import 'run_controller.dart';
 
 enum LoadState { idle, loading, ready, error }
 
 class AppState extends ChangeNotifier {
-  AppState({ChaoxingApi? api, Future<void> Function(Duration)? sleep})
-      : api = api ?? ChaoxingApi(),
-        _sleep = sleep {
-    run = RunController(api: this.api, onChanged: _notify, sleep: _sleep);
+  AppState({
+    ChaoxingApi? api,
+    Future<void> Function(Duration)? sleep,
+    RunKeeper? runKeeper,
+  })  : api = api ?? ChaoxingApi(),
+        _sleep = sleep,
+        runKeeper = runKeeper ?? createRunKeeper() {
+    run = RunController(
+      api: this.api,
+      onChanged: _notify,
+      sleep: _sleep,
+      keeper: this.runKeeper,
+    );
+    probe = KeepAliveProbe(keeper: this.runKeeper);
   }
 
   final ChaoxingApi api;
   final Future<void> Function(Duration)? _sleep;
+
+  /// 执行期间的后台保活。测试默认注入 Noop，真机是 Android 前台服务。
+  final RunKeeper runKeeper;
+
+  /// 后台保活自检。放在 AppState 而不是自检页里：自检要 3 分钟，
+  /// 中途切去看课程再回来，结果不该消失——上一版把它挂在页面 State 上，一切页就清零。
+  late final KeepAliveProbe probe;
 
   /// 执行会话：进度、日志与停止入口都在这里。
   late final RunController run;
@@ -32,7 +52,9 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    probe.dispose();
     run.dispose();
+    runKeeper.dispose();
     super.dispose();
   }
 

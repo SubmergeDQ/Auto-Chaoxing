@@ -41,7 +41,7 @@ class _AppShellState extends State<AppShell> {
       case 1:
         return RunPage(state: widget.state, onGoToCourses: () => _select(0));
       case 2:
-        return const SelfCheckPage();
+        return SelfCheckPage(probe: widget.state.probe);
       default:
         return SettingsPage(state: widget.state);
     }

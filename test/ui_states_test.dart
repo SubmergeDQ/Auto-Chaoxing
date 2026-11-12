@@ -1,14 +1,21 @@
 import 'package:auto_chaoxing/core/models.dart';
 import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/main.dart';
+import 'package:auto_chaoxing/platform/platform_services.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
+import 'package:auto_chaoxing/state/keep_alive_probe.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_api.dart';
+import 'support/fake_run_keeper.dart';
 
 void main() {
-  AppState signedInState({List<Course> courses = kDemoCourses}) {
-    final AppState state = AppState(api: FakeChaoxingApi(courses: courses));
+  AppState signedInState({List<Course> courses = kDemoCourses, RunKeeper? keeper}) {
+    final AppState state = AppState(
+      api: FakeChaoxingApi(courses: courses),
+      // 测试环境没有原生通道：显式用 Noop，避免多出一条「保活未启用」的告警干扰断言。
+      runKeeper: keeper ?? const NoopRunKeeper(),
+    );
     state.profile = const Profile(
       uid: '10086',
       name: '林知远',
@@ -29,6 +36,7 @@ void main() {
       ),
       // 零延时，避免 Widget 测试等真实秒级节流。
       sleep: (Duration _) async {},
+      runKeeper: const NoopRunKeeper(),
     );
     state.profile = const Profile(uid: '10086', name: '林知远', fid: '666');
     state.coursesState = LoadState.ready;
@@ -130,6 +138,32 @@ void main() {
 
       expect(find.text('断开连接'), findsNothing);
       expect(find.text('未连接账号'), findsNWidgets(2), reason: '顶栏与账号卡片各一处');
+    });
+
+    testWidgets('自检结果切页回来还在', (WidgetTester tester) async {
+      // 用 supported 的替身：Noop 下整块保活卡不渲染，测不到这条回归。
+      final AppState state = signedInState(keeper: RunKeeperStub());
+      // 真机上自检要跑 3 分钟，用户中间会去看课程；结果由 AppState 持有，
+      // 挂在页面 State 上的话一切页就清零（这一条是回归）。
+      state.probe.seedForPreview(
+        phase: ProbePhase.done,
+        ticks: 12,
+        maxGap: const Duration(seconds: 15),
+        elapsed: const Duration(minutes: 3),
+      );
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('自检'));
+      await tester.pump();
+      expect(find.text('计时连续'), findsOneWidget);
+
+      await tester.tap(find.text('课程'));
+      await tester.pump();
+      await tester.tap(find.text('自检'));
+      await tester.pump();
+
+      expect(find.text('计时连续'), findsOneWidget);
+      expect(find.text('未开始'), findsNothing, reason: '结果不该被重建抹掉');
     });
   });
 
