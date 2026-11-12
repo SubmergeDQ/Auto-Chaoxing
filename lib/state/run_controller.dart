@@ -22,6 +22,9 @@ class RunController {
 
   final List<TaskLog> logs = <TaskLog>[];
 
+  /// 因为上限被丢掉的日志条数。导出时要说清「这份日志不是全部」。
+  int droppedLogs = 0;
+
   TaskProgress progress = const TaskProgress(phase: TaskPhase.idle);
   String courseName = '';
   String chapterTitle = '';
@@ -53,6 +56,7 @@ class RunController {
     courseName = course.name;
     chapterTitle = chapter.title;
     logs.clear();
+    droppedLogs = 0;
     startedAt = DateTime.now();
     finishedAt = null;
     progress = const TaskProgress(phase: TaskPhase.preparing, message: '准备中…');
@@ -70,7 +74,11 @@ class RunController {
       onLog: (TaskLog log) {
         if (session != _session || _disposed) return;
         logs.add(log);
-        if (logs.length > maxLogs) logs.removeRange(0, logs.length - maxLogs);
+        if (logs.length > maxLogs) {
+          final int cut = logs.length - maxLogs;
+          logs.removeRange(0, cut);
+          droppedLogs += cut;
+        }
         _onChanged();
       },
     );
@@ -106,6 +114,7 @@ class RunController {
   void clearLogs() {
     if (logs.isEmpty) return;
     logs.clear();
+    droppedLogs = 0;
     _onChanged();
   }
 
@@ -117,6 +126,7 @@ class RunController {
     _lastCourse = null;
     _lastChapter = null;
     logs.clear();
+    droppedLogs = 0;
     progress = const TaskProgress(phase: TaskPhase.idle);
     courseName = '';
     chapterTitle = '';
@@ -152,6 +162,7 @@ class RunController {
     this.logs
       ..clear()
       ..addAll(logs);
+    droppedLogs = 0;
     this.startedAt = startedAt ?? DateTime.now();
     this.finishedAt = finishedAt;
     _onChanged();

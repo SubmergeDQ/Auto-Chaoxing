@@ -3,7 +3,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/log_export.dart';
 import '../core/models.dart';
 import '../core/task_runner.dart';
 import '../state/app_state.dart';
@@ -253,6 +255,14 @@ class _StatusCard extends StatelessWidget {
                   label: const Text('再次执行'),
                 ),
               // 执行中不提供清空：日志是本次执行唯一的现场证据。
+              // 顺序是「再次执行 → 复制日志 → 清空日志」：破坏性动作永远排最后。
+              if (!run.busy && run.logs.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () => _copyLogs(context, run),
+                  icon: const Icon(Icons.content_copy_outlined, size: 18),
+                  label: const Text('复制日志'),
+                  style: TextButton.styleFrom(foregroundColor: AcxColors.textSecondary),
+                ),
               if (!run.busy && run.logs.isNotEmpty)
                 TextButton.icon(
                   onPressed: run.clearLogs,
@@ -264,6 +274,28 @@ class _StatusCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _copyLogs(BuildContext context, RunController run) {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final String text = formatRunLog(
+      courseName: run.courseName,
+      chapterTitle: run.chapterTitle,
+      phase: run.phase,
+      summary: run.progress.message,
+      logs: run.logs,
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt,
+      dropped: run.droppedLogs,
+    );
+    // 不等剪贴板：这条通道在部分环境不回消息，await 会让反馈永远不出现。
+    // 失败时另给一条提示，避免「说复制成功、其实没复制上」。
+    Clipboard.setData(ClipboardData(text: text)).catchError((Object _) {
+      messenger.showSnackBar(const SnackBar(content: Text('复制失败：剪贴板不可用')));
+    });
+    messenger.showSnackBar(
+      const SnackBar(content: Text('日志已复制，手机号与令牌已隐去')),
     );
   }
 

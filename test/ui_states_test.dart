@@ -271,6 +271,28 @@ void main() {
       );
     });
 
+    testWidgets('结束时可以复制脱敏日志，运行中不提供', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: runningState(phase: TaskPhase.succeeded)));
+      await tester.tap(find.text('执行'));
+      await tester.pump();
+
+      expect(find.text('复制日志'), findsOneWidget);
+
+      await tester.tap(find.text('复制日志'));
+      await tester.pump();
+      expect(find.text('日志已复制，手机号与令牌已隐去'), findsOneWidget);
+    });
+
+    testWidgets('运行中不给复制与清空，只留停止', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: runningState()));
+      await tester.tap(find.text('执行'));
+      await tester.pump();
+
+      expect(find.text('复制日志'), findsNothing);
+      expect(find.text('清空日志'), findsNothing);
+      expect(find.text('停止执行'), findsOneWidget);
+    });
+
     testWidgets('确认执行后切到任务执行页并留下日志', (WidgetTester tester) async {
       final AppState state = courseSelectedState();
       await state.loadPoints(kDemoChapters.first);
