@@ -68,6 +68,11 @@ Future<void> startChapterRun(
   );
   if (confirmed != true) return;
 
+  // Android 13+ 没有通知权限时，前端服务照跑但通知不可见——
+  // 用户既看不到进度，也点不到通知上的「停止」。所以先要一次，拒绝也照常执行。
+  await state.runKeeper.ensureNotificationPermission();
+  if (!context.mounted) return;
+
   unawaited(state.run.start(course: course, chapter: chapter));
   onOpenRun?.call();
 }
