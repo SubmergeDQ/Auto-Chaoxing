@@ -1,0 +1,14 @@
+/.gradle
+/captures/
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# gradlew / gradlew.bat / gradle-wrapper.jar 刻意不忽略：
+# CI 的 flutter build apk 需要它们，缺了会在别人机器上无法复现构建。
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
