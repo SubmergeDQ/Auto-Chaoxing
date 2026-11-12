@@ -324,6 +324,14 @@ class _CourseTile extends StatelessWidget {
   }
 }
 
+/// 登录对话框的唯一入口：课程页空白态与设置页都用它，措辞和校验只有一份。
+Future<void> showLoginDialog(BuildContext context, AppState state) {
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext _) => LoginDialog(state: state),
+  );
+}
+
 /// 登录对话框公开给设置页复用，断开连接后可以就地重新连接。
 class LoginDialog extends StatefulWidget {
   const LoginDialog({super.key, required this.state});

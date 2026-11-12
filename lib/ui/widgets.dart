@@ -257,11 +257,15 @@ class AcxTopBar extends StatelessWidget implements PreferredSizeWidget {
     required this.title,
     this.subtitle,
     this.actions = const <Widget>[],
+    this.leading,
   });
 
   final String title;
   final String? subtitle;
   final List<Widget> actions;
+
+  /// 二级页的返回入口。一级页传 null，标题就从最左侧开始。
+  final Widget? leading;
 
   @override
   Size get preferredSize => const Size.fromHeight(64);
@@ -281,6 +285,10 @@ class AcxTopBar extends StatelessWidget implements PreferredSizeWidget {
         ),
         child: Row(
           children: <Widget>[
+            if (leading != null) ...<Widget>[
+              leading!,
+              const SizedBox(width: AcxSpacing.xs),
+            ],
             Flexible(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

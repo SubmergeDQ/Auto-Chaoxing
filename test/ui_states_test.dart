@@ -113,7 +113,9 @@ void main() {
     testWidgets('协议自检两行向量都通过', (WidgetTester tester) async {
       await tester.pumpWidget(AutoChaoxingApp(state: signedInState()));
 
-      await tester.tap(find.text('自检'));
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      await tester.tap(find.text('协议自检'));
       await tester.pump();
 
       expect(find.text('协议自检通过'), findsOneWidget);
@@ -121,14 +123,32 @@ void main() {
       expect(find.text('AES-CBC 登录加密'), findsOneWidget);
     });
 
-    testWidgets('设置页展示运行约束与断开连接', (WidgetTester tester) async {
+    testWidgets('设置页收拢入口，运行约束在二级页且能返回', (WidgetTester tester) async {
       await tester.pumpWidget(AutoChaoxingApp(state: signedInState()));
 
       await tester.tap(find.text('设置'));
       await tester.pump();
 
+      // 一级设置页只有入口，不再平铺条款。
+      expect(find.text('单账号串行'), findsNothing);
+      expect(find.text('运行约束'), findsOneWidget);
+
+      await tester.tap(find.text('运行约束'));
+      await tester.pump();
       expect(find.text('单账号串行'), findsOneWidget);
-      expect(find.text('断开连接'), findsOneWidget);
+
+      // 二级页有返回，且返回后回到设置列表。
+      await tester.tap(find.byTooltip('返回设置'));
+      await tester.pump();
+      expect(find.text('单账号串行'), findsNothing);
+      expect(find.text('协议自检'), findsOneWidget);
+    });
+
+    testWidgets('设置页断开连接后可以就地重连', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: signedInState()));
+
+      await tester.tap(find.text('设置'));
+      await tester.pump();
 
       final Finder disconnect = find.text('断开连接');
       await tester.ensureVisible(disconnect);
@@ -137,6 +157,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('断开连接'), findsNothing);
+      expect(find.text('连接账号'), findsOneWidget);
       expect(find.text('未连接账号'), findsNWidgets(2), reason: '顶栏与账号卡片各一处');
     });
 
@@ -153,13 +174,17 @@ void main() {
       );
 
       await tester.pumpWidget(AutoChaoxingApp(state: state));
-      await tester.tap(find.text('自检'));
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      await tester.tap(find.text('协议自检'));
       await tester.pump();
       expect(find.text('计时连续'), findsOneWidget);
 
       await tester.tap(find.text('课程'));
       await tester.pump();
-      await tester.tap(find.text('自检'));
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      await tester.tap(find.text('协议自检'));
       await tester.pump();
 
       expect(find.text('计时连续'), findsOneWidget);

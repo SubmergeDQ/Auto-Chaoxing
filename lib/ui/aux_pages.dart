@@ -1,15 +1,385 @@
-// 协议自检页与运行约束页。
+// 设置页与它的二级页：协议自检、运行约束、隐私与数据。
+//
+// 为什么收进二级页：一级导航只放「同一账号下的同级视图」，自检和条款都是
+// 偶发使用的说明性内容，平铺在主导航里会挤掉真正每天要用的两个页面。
 // 自检向量与 core/chaoxing_core.py、test/crypto_test.dart 三者一致。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../core/crypto.dart';
+import '../core/models.dart';
 import '../state/app_state.dart';
 import '../state/keep_alive_probe.dart';
 import 'courses_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
+
+/// 设置页能下钻的三页。
+enum SettingsSubPage { selfCheck, constraints, privacy }
+
+/// 二级页的标题与说明，由外壳读取后交给顶栏。
+({String title, String subtitle}) describeSubPage(SettingsSubPage page) {
+  return switch (page) {
+    SettingsSubPage.selfCheck => (title: '协议自检', subtitle: '登录加密、进度签名与后台计时'),
+    SettingsSubPage.constraints => (title: '运行约束', subtitle: '这个客户端会做与不会做的事'),
+    SettingsSubPage.privacy => (title: '隐私与数据', subtitle: '哪些数据留在本机，怎么彻底删除'),
+  };
+}
+
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key, required this.state, required this.onOpen});
+
+  final AppState state;
+  final ValueChanged<SettingsSubPage> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AcxSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const _GroupLabel('账号'),
+          const SizedBox(height: AcxSpacing.md),
+          _AccountCard(state: state),
+          const SizedBox(height: AcxSpacing.xxl),
+          const _GroupLabel('诊断与约束'),
+          const SizedBox(height: AcxSpacing.md),
+          AcxSectionCard(
+            padding: const EdgeInsets.symmetric(horizontal: AcxSpacing.sm, vertical: AcxSpacing.xs),
+            child: Column(
+              children: <Widget>[
+                _SettingsTile(
+                  icon: Icons.science_outlined,
+                  title: '协议自检',
+                  detail: '登录加密、进度签名、熄屏计时',
+                  onTap: () => onOpen(SettingsSubPage.selfCheck),
+                ),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.linear_scale_rounded,
+                  title: '运行约束',
+                  detail: '串行执行、节流间隔、需要人工时停止',
+                  onTap: () => onOpen(SettingsSubPage.constraints),
+                ),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.shield_outlined,
+                  title: '隐私与数据',
+                  detail: '日志脱敏、会话存放位置、彻底清除',
+                  onTap: () => onOpen(SettingsSubPage.privacy),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AcxSpacing.xxl),
+          const Text(
+            'Auto-Chaoxing · 客户端 v0.3.2\n'
+            '仅用于本人账号与已选修课程，不代写作业、不代交考试。',
+            style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textTertiary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AcxColors.textSecondary,
+      ),
+    );
+  }
+}
+
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final Profile? p = state.profile;
+    return AcxSectionCard(
+      child: Row(
+        children: <Widget>[
+          Icon(
+            state.signedIn ? Icons.account_circle_outlined : Icons.person_off_outlined,
+            color: state.signedIn ? AcxColors.brand : AcxColors.textTertiary,
+          ),
+          const SizedBox(width: AcxSpacing.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  state.restoringSession ? '正在恢复登录…' : (p?.name ?? '未连接账号'),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AcxColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  state.restoringSession
+                      ? '正在校验上次的登录状态'
+                      : state.signedIn
+                          ? '${p?.school ?? "学校未填写"}  ·  uid ${p?.uid ?? ""}'
+                          : '连接账号后即可读取课程与章节',
+                  style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          // 断开后留在设置页也要能就地重连，不必自己想到切回工作台。
+          if (state.signedIn)
+            OutlinedButton(
+              onPressed: () => unawaited(state.signOut()),
+              child: const Text('断开连接'),
+            )
+          else if (!state.restoringSession)
+            FilledButton(
+              onPressed: () => unawaited(showLoginDialog(context, state)),
+              child: const Text('连接账号'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AcxRadius.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AcxSpacing.lg, vertical: AcxSpacing.md),
+          child: Row(
+            children: <Widget>[
+              Icon(icon, size: 18, color: AcxColors.brand),
+              const SizedBox(width: AcxSpacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AcxColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      detail,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.5,
+                        color: AcxColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, size: 20, color: AcxColors.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 运行约束：说明白「这个客户端不做什么」，比功能列表更重要。
+class ConstraintsPage extends StatelessWidget {
+  const ConstraintsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const SingleChildScrollView(
+      padding: EdgeInsets.all(AcxSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          AcxSectionCard(
+            padding: EdgeInsets.symmetric(horizontal: AcxSpacing.xl, vertical: AcxSpacing.sm),
+            child: Column(
+              children: <Widget>[
+                _SettingRow(
+                  icon: Icons.linear_scale_rounded,
+                  title: '单账号串行',
+                  detail: '同一时间只跑一个任务，避免并发触发风控',
+                ),
+                Divider(height: 1),
+                _SettingRow(
+                  icon: Icons.speed_rounded,
+                  title: '节流间隔',
+                  detail: '答题 2–4 秒 · 进度 1 秒 · 课程 30 秒',
+                ),
+                Divider(height: 1),
+                _SettingRow(
+                  icon: Icons.no_adult_content_outlined,
+                  title: '考试功能',
+                  detail: '只提醒，不自动交卷',
+                ),
+                Divider(height: 1),
+                _SettingRow(
+                  icon: Icons.front_hand_outlined,
+                  title: '需要人工时停止',
+                  detail: '人脸抽检、验证码、二次验证一律交回用户处理',
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: AcxSpacing.lg),
+          Text(
+            '这些不是「还没做」，是刻意的边界：越界的那部分交给平台风控判断，'
+            '一旦判定异常，受影响的是你自己的账号。',
+            style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textTertiary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 隐私与数据：把「东西存在哪、怎么删干净」讲清楚。
+class PrivacyPage extends StatelessWidget {
+  const PrivacyPage({super.key, required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AcxSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const AcxSectionCard(
+            padding: EdgeInsets.symmetric(horizontal: AcxSpacing.xl, vertical: AcxSpacing.sm),
+            child: Column(
+              children: <Widget>[
+                _SettingRow(
+                  icon: Icons.shield_outlined,
+                  title: '日志脱敏',
+                  detail: '不记录密码、cookie 原文、手机号、姓名与学号',
+                ),
+                Divider(height: 1),
+                _SettingRow(
+                  icon: Icons.computer_rounded,
+                  title: '本地请求',
+                  detail: '所有请求从本机直接发出，不经第三方中转',
+                ),
+                Divider(height: 1),
+                _SettingRow(
+                  icon: Icons.credit_card_off_outlined,
+                  title: '不保存密码',
+                  detail: '只把登录后的会话存在本机，密码不落盘',
+                ),
+                Divider(height: 1),
+                _SettingRow(
+                  icon: Icons.folder_outlined,
+                  title: '会话存放',
+                  detail: '应用私有目录 session/，卸载时随应用一起删除',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AcxSpacing.lg),
+          const Text(
+            '想立刻清空本机数据：点下面的「清除本机会话」，或在账号卡片上断开连接。'
+            '两者都会删掉 cookie 文件，下次打开需要重新登录。',
+            style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textSecondary),
+          ),
+          const SizedBox(height: AcxSpacing.lg),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: state.signedIn ? () => unawaited(state.signOut()) : null,
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: Text(state.signedIn ? '清除本机会话' : '本机没有登录会话'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingRow extends StatelessWidget {
+  const _SettingRow({
+    required this.icon,
+    required this.title,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AcxSpacing.md),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: AcxColors.brand),
+          const SizedBox(width: AcxSpacing.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AcxColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  detail,
+                  style: const TextStyle(fontSize: 12, height: 1.5, color: AcxColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class SelfCheckPage extends StatefulWidget {
   const SelfCheckPage({super.key, required this.probe});
@@ -335,183 +705,6 @@ class _ValueLine extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.state});
-
-  final AppState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AcxSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const Text(
-            '运行约束',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AcxColors.textSecondary),
-          ),
-          const SizedBox(height: AcxSpacing.md),
-          const AcxSectionCard(
-            padding: EdgeInsets.symmetric(horizontal: AcxSpacing.xl, vertical: AcxSpacing.sm),
-            child: Column(
-              children: <Widget>[
-                _SettingRow(
-                  icon: Icons.linear_scale_rounded,
-                  title: '单账号串行',
-                  detail: '同一时间只跑一个任务，避免并发触发风控',
-                ),
-                Divider(height: 1),
-                _SettingRow(
-                  icon: Icons.speed_rounded,
-                  title: '节流间隔',
-                  detail: '答题 2–4 秒 · 进度 1 秒 · 课程 30 秒',
-                ),
-                Divider(height: 1),
-                _SettingRow(
-                  icon: Icons.no_adult_content_outlined,
-                  title: '考试功能',
-                  detail: '只提醒，不自动交卷',
-                ),
-                Divider(height: 1),
-                _SettingRow(
-                  icon: Icons.front_hand_outlined,
-                  title: '需要人工时停止',
-                  detail: '人脸抽检、验证码、二次验证一律交回用户处理',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AcxSpacing.xl),
-          const Text(
-            '隐私',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AcxColors.textSecondary),
-          ),
-          const SizedBox(height: AcxSpacing.md),
-          const AcxSectionCard(
-            padding: EdgeInsets.symmetric(horizontal: AcxSpacing.xl, vertical: AcxSpacing.sm),
-            child: Column(
-              children: <Widget>[
-                _SettingRow(
-                  icon: Icons.shield_outlined,
-                  title: '日志脱敏',
-                  detail: '不记录密码、cookie 原文、手机号、姓名与学号',
-                ),
-                Divider(height: 1),
-                _SettingRow(
-                  icon: Icons.computer_rounded,
-                  title: '本地请求',
-                  detail: '所有请求从本机直接发出，不经第三方中转',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AcxSpacing.xl),
-          const Text(
-            '账号',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AcxColors.textSecondary),
-          ),
-          const SizedBox(height: AcxSpacing.md),
-          AcxSectionCard(
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  state.signedIn ? Icons.account_circle_outlined : Icons.person_off_outlined,
-                  color: state.signedIn ? AcxColors.brand : AcxColors.textTertiary,
-                ),
-                const SizedBox(width: AcxSpacing.lg),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        state.signedIn ? (state.profile?.name ?? '已连接') : '未连接账号',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: AcxColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        state.signedIn
-                            ? '${state.profile?.school ?? "学校未填写"}  ·  uid ${state.profile?.uid ?? ""}'
-                            : '连接账号后即可读取课程与章节',
-                        style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                // 断开后留在设置页也要能就地重连，不必自己想到切回工作台。
-                if (state.signedIn)
-                  OutlinedButton(
-                    onPressed: () => unawaited(state.signOut()),
-                    child: const Text('断开连接'),
-                  )
-                else
-                  FilledButton(
-                    onPressed: () => unawaited(
-                      showDialog<void>(
-                        context: context,
-                        builder: (BuildContext _) => LoginDialog(state: state),
-                      ),
-                    ),
-                    child: const Text('连接账号'),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({
-    required this.icon,
-    required this.title,
-    required this.detail,
-  });
-
-  final IconData icon;
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AcxSpacing.md),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 18, color: AcxColors.brand),
-          const SizedBox(width: AcxSpacing.lg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: AcxColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  detail,
-                  style: const TextStyle(fontSize: 12, height: 1.5, color: AcxColors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -23,6 +23,17 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
+  /// 设置里的二级页。非空时主区域显示它，顶栏换成带返回的标题。
+  /// 不用 Navigator 压栈：宽屏侧栏要保持可见，压栈会把侧栏一起盖掉。
+  SettingsSubPage? _sub;
+
+  static const List<String> _titles = <String>['课程工作台', '任务执行', '设置'];
+  static const List<String> _subtitles = <String>[
+    '课程、章节与任务点',
+    '执行进度与实时日志',
+    '账号、诊断与运行约束',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -33,110 +44,128 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  static const List<String> _titles = <String>['课程工作台', '任务执行', '协议自检', '设置'];
-  static const List<String> _subtitles = <String>[
-    '课程、章节与任务点',
-    '执行进度与实时日志',
-    '两个本地算法的正确性检查',
-    '运行方式与隐私保护',
-  ];
-
   void _select(int index) {
-    if (_index == index) return;
-    setState(() => _index = index);
+    if (_index == index && _sub == null) return;
+    setState(() {
+      _index = index;
+      _sub = null;
+    });
   }
 
+  void _openSub(SettingsSubPage page) => setState(() => _sub = page);
+
+  void _closeSub() => setState(() => _sub = null);
+
   Widget _body() {
+    final SettingsSubPage? sub = _sub;
+    if (sub != null) {
+      return switch (sub) {
+        SettingsSubPage.selfCheck => SelfCheckPage(probe: widget.state.probe),
+        SettingsSubPage.constraints => const ConstraintsPage(),
+        SettingsSubPage.privacy => PrivacyPage(state: widget.state),
+      };
+    }
     switch (_index) {
       case 0:
         return CoursesPage(state: widget.state, onOpenRun: () => _select(1));
       case 1:
         return RunPage(state: widget.state, onGoToCourses: () => _select(0));
-      case 2:
-        return SelfCheckPage(probe: widget.state.probe);
       default:
-        return SettingsPage(state: widget.state);
+        return SettingsPage(state: widget.state, onOpen: _openSub);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final bool wide = MediaQuery.sizeOf(context).width >= 1000;
-    return AnimatedBuilder(
-      animation: widget.state,
-      builder: (BuildContext context, Widget? _) {
-        final bool running = widget.state.run.busy;
-        final List<Widget> actions = <Widget>[
-          // 全局运行信号：切到自检或设置页时也知道后台还在跑；已在执行页就不重复一遍。
-          if (wide && running && _index != 1)
-            const Padding(
-              padding: EdgeInsets.only(right: AcxSpacing.sm),
-              child: AcxStatusBadge(label: '运行中', status: AcxStatus.running),
+    return PopScope(
+      // 二级页时拦下系统返回，先回到设置列表而不是直接退出应用。
+      canPop: _sub == null,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop && _sub != null) _closeSub();
+      },
+      child: AnimatedBuilder(
+        animation: widget.state,
+        builder: (BuildContext context, Widget? _) {
+          final bool running = widget.state.run.busy;
+          final SettingsSubPage? sub = _sub;
+          final List<Widget> actions = <Widget>[
+            // 全局运行信号：切到设置页时也知道后台还在跑；已在执行页就不重复一遍。
+            if (wide && running && _index != 1)
+              const Padding(
+                padding: EdgeInsets.only(right: AcxSpacing.sm),
+                child: AcxStatusBadge(label: '运行中', status: AcxStatus.running),
+              ),
+            AcxAccountChip(
+              name: widget.state.profile?.name ?? '',
+              signedIn: widget.state.signedIn,
             ),
-          AcxAccountChip(
-            name: widget.state.profile?.name ?? '',
-            signedIn: widget.state.signedIn,
-          ),
-        ];
-        final AcxTopBar topBar = AcxTopBar(
-          title: _titles[_index],
-          subtitle: _subtitles[_index],
-          actions: actions,
-        );
-        final Widget body = _body();
-
-        if (wide) {
-          return Scaffold(
-            body: Row(
-              children: <Widget>[
-                _Sidebar(index: _index, onSelect: _select, state: widget.state),
-                Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      topBar,
-                      Expanded(child: body),
-                    ],
+          ];
+          final ({String title, String subtitle}) heading =
+              sub == null ? (title: _titles[_index], subtitle: _subtitles[_index]) : describeSubPage(sub);
+          final AcxTopBar topBar = AcxTopBar(
+            title: heading.title,
+            subtitle: heading.subtitle,
+            actions: actions,
+            leading: sub == null
+                ? null
+                : IconButton(
+                    onPressed: _closeSub,
+                    icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                    color: AcxColors.textSecondary,
+                    tooltip: '返回设置',
                   ),
+          );
+          final Widget body = _body();
+
+          if (wide) {
+            return Scaffold(
+              body: Row(
+                children: <Widget>[
+                  _Sidebar(index: _index, onSelect: _select, state: widget.state),
+                  Expanded(
+                    child: Column(
+                      children: <Widget>[
+                        topBar,
+                        Expanded(child: body),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Scaffold(
+            appBar: topBar,
+            body: body,
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: _select,
+              backgroundColor: AcxColors.surface,
+              indicatorColor: AcxColors.brandSoft,
+              destinations: <NavigationDestination>[
+                const NavigationDestination(
+                  icon: Icon(Icons.menu_book_outlined),
+                  selectedIcon: Icon(Icons.menu_book_rounded),
+                  label: '课程',
+                ),
+                NavigationDestination(
+                  // 窄屏没有顶栏徽章的位置，用底栏小圆点提示后台仍在执行。
+                  icon: _runIcon(const Icon(Icons.bolt_outlined), running),
+                  selectedIcon: _runIcon(const Icon(Icons.bolt_rounded), running),
+                  label: '执行',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  selectedIcon: Icon(Icons.settings_rounded),
+                  label: '设置',
                 ),
               ],
             ),
           );
-        }
-
-        return Scaffold(
-          appBar: topBar,
-          body: body,
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _index,
-            onDestinationSelected: _select,
-            backgroundColor: AcxColors.surface,
-            indicatorColor: AcxColors.brandSoft,
-            destinations: <NavigationDestination>[
-              const NavigationDestination(
-                icon: Icon(Icons.menu_book_outlined),
-                selectedIcon: Icon(Icons.menu_book_rounded),
-                label: '课程',
-              ),
-              NavigationDestination(
-                // 窄屏没有顶栏徽章的位置，用底栏小圆点提示后台仍在执行。
-                icon: _runIcon(const Icon(Icons.bolt_outlined), running),
-                selectedIcon: _runIcon(const Icon(Icons.bolt_rounded), running),
-                label: '执行',
-              ),
-              const NavigationDestination(
-                icon: Icon(Icons.science_outlined),
-                selectedIcon: Icon(Icons.science_rounded),
-                label: '自检',
-              ),
-              const NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings_rounded),
-                label: '设置',
-              ),
-            ],
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -221,16 +250,10 @@ class _Sidebar extends StatelessWidget {
             showRunningDot: state.run.busy,
           ),
           _NavItem(
-            icon: Icons.science_outlined,
-            label: '协议自检',
-            selected: index == 2,
-            onTap: () => onSelect(2),
-          ),
-          _NavItem(
             icon: Icons.settings_outlined,
             label: '设置',
-            selected: index == 3,
-            onTap: () => onSelect(3),
+            selected: index == 2,
+            onTap: () => onSelect(2),
           ),
           const Spacer(),
           const Divider(color: Color(0xFF2C5A52), height: 1),
