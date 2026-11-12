@@ -1,4 +1,4 @@
-// 视觉取证工具：用 Flutter 真实渲染导出标准视口 PNG。
+// 视觉取证工具：用 Flutter 真实渲染导出标准视口与交互状态 PNG。
 // 文件名不以 _test.dart 结尾，不会被 CI 的 `flutter test` 自动收集；显式运行：
 //   flutter test test/visual_capture.dart --update-goldens
 // 产物写入 test/goldens/（过程文件，不入库），数据来自 test/support/fake_api.dart。
@@ -24,6 +24,7 @@ void main() {
       family = await loadTestFonts();
     });
 
+    // 桌面：常态、空态、登录表单、自检、设置、断开连接后
     await capture(
       tester: tester,
       name: 'desktop-courses',
@@ -38,6 +39,14 @@ void main() {
       size: const Size(1440, 900),
       state: AppState(api: FakeChaoxingApi()),
       fontFamily: family,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-login',
+      size: const Size(1440, 900),
+      state: AppState(api: FakeChaoxingApi()),
+      fontFamily: family,
+      showLoginDialog: true,
     );
     await capture(
       tester: tester,
@@ -57,6 +66,17 @@ void main() {
     );
     await capture(
       tester: tester,
+      name: 'desktop-disconnected',
+      size: const Size(1440, 900),
+      state: signedInState(),
+      fontFamily: family,
+      page: 2,
+      tapDisconnect: true,
+    );
+
+    // 移动端：课程列表、章节下钻、自检、设置、空态
+    await capture(
+      tester: tester,
       name: 'mobile-courses',
       size: const Size(390, 844),
       state: signedInState(),
@@ -69,6 +89,22 @@ void main() {
       state: signedInState(),
       fontFamily: family,
       openCourse: true,
+    );
+    await capture(
+      tester: tester,
+      name: 'mobile-selfcheck',
+      size: const Size(390, 844),
+      state: signedInState(),
+      fontFamily: family,
+      page: 1,
+    );
+    await capture(
+      tester: tester,
+      name: 'mobile-settings',
+      size: const Size(390, 844),
+      state: signedInState(),
+      fontFamily: family,
+      page: 2,
     );
     await capture(
       tester: tester,
@@ -147,12 +183,15 @@ Future<void> capture({
   int page = 0,
   bool expandFirstChapter = false,
   bool openCourse = false,
+  bool showLoginDialog = false,
+  bool tapDisconnect = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
+  final bool wide = size.width >= 1000;
   final GlobalKey boundaryKey = GlobalKey();
   await tester.pumpWidget(
     RepaintBoundary(
@@ -166,8 +205,17 @@ Future<void> capture({
   );
   await tester.pump(const Duration(milliseconds: 300));
 
+  if (showLoginDialog) {
+    final Finder login = find.text('连接账号');
+    if (login.evaluate().isNotEmpty) {
+      await tester.tap(login.first);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
   if (page == 1) {
-    final Finder nav = find.text('协议自检');
+    // 侧栏叫「协议自检」，窄屏底栏叫「自检」。
+    final Finder nav = find.text(wide ? '协议自检' : '自检');
     if (nav.evaluate().isNotEmpty) {
       await tester.tap(nav.first);
       await tester.pump(const Duration(milliseconds: 300));
@@ -182,6 +230,10 @@ Future<void> capture({
       if (disconnect.evaluate().isNotEmpty) {
         await tester.ensureVisible(disconnect);
         await tester.pump(const Duration(milliseconds: 300));
+        if (tapDisconnect) {
+          await tester.tap(disconnect);
+          await tester.pump(const Duration(milliseconds: 300));
+        }
       }
     }
   }
