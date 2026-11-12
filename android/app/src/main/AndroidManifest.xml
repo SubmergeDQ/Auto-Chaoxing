@@ -1,6 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 业务全部走 HTTPS；模板只在 debug/profile 声明了网络权限，release 会断网 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 执行期间的前台服务：保进程 + 常驻进度通知。
+         specialUse 用于「用户主动发起、时长由内容决定」的任务，
+         比 dataSync 更贴切，也不受 Android 15 对 dataSync 的 6 小时限制。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <!-- 熄屏后不让 CPU 进深度睡眠，否则 Dart 的 60 秒节流会被拉长 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Android 13+ 运行时授权：没有它前台服务照跑，但通知（含「停止」）不可见 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="Auto-Chaoxing"
@@ -33,6 +42,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- 执行期间的前台服务。不导出：只由本应用自己启动。 -->
+        <service
+            android:name=".RunKeepService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="执行用户主动发起的课程视频进度同步，期间需保持网络连接与计时不中断" />
+        </service>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
