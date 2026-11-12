@@ -108,6 +108,14 @@ class _AccountCard extends StatelessWidget {
 
   final AppState state;
 
+  /// 学校名可能为空（不是所有账号都带 schoolname）。
+  /// 空的时候只写 uid，别留一个孤零零的分隔符在前面。
+  static String _accountLine(Profile? p) {
+    final String uid = 'uid ${p?.uid ?? ""}';
+    final String school = (p?.school ?? '').trim();
+    return school.isEmpty ? uid : '$school  ·  $uid';
+  }
+
   @override
   Widget build(BuildContext context) {
     final Profile? p = state.profile;
@@ -136,7 +144,7 @@ class _AccountCard extends StatelessWidget {
                   state.restoringSession
                       ? '正在校验上次的登录状态'
                       : state.signedIn
-                          ? '${p?.school ?? "学校未填写"}  ·  uid ${p?.uid ?? ""}'
+                          ? _accountLine(p)
                           : '连接账号后即可读取课程与章节',
                   style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
                 ),
