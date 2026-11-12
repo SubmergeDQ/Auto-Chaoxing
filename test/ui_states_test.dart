@@ -1,4 +1,5 @@
 import 'package:auto_chaoxing/core/models.dart';
+import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/main.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,49 @@ void main() {
     );
     state.coursesState = LoadState.ready;
     state.courses = courses;
+    return state;
+  }
+
+  AppState courseSelectedState() {
+    final AppState state = AppState(
+      api: FakeChaoxingApi(
+        courses: kDemoCourses,
+        chapters: kDemoChapters,
+        points: kDemoPoints,
+      ),
+      // 零延时，避免 Widget 测试等真实秒级节流。
+      sleep: (Duration _) async {},
+    );
+    state.profile = const Profile(uid: '10086', name: '林知远', fid: '666');
+    state.coursesState = LoadState.ready;
+    state.courses = kDemoCourses;
+    state.selectedCourse = kDemoCourses.first;
+    state.chaptersState = LoadState.ready;
+    state.chapters = kDemoChapters;
+    return state;
+  }
+
+  /// 注入一次执行快照，让执行页有确定的进度与日志可渲染。
+  AppState runningState({TaskPhase phase = TaskPhase.running}) {
+    final AppState state = signedInState();
+    state.run.seedForPreview(
+      courseName: '高等数学（上）',
+      chapterTitle: '第一章 函数与极限',
+      progress: TaskProgress(
+        phase: phase,
+        current: phase == TaskPhase.running ? '1.2 数列的极限' : '',
+        done: phase == TaskPhase.succeeded ? 3 : 1,
+        total: 3,
+        message: phase == TaskPhase.succeeded ? '完成 3 / 3' : '',
+      ),
+      course: kDemoCourses.first,
+      chapter: kDemoChapters.first,
+      logs: <TaskLog>[
+        TaskLog('开始处理「第一章 函数与极限」，共 3 个视频任务点'),
+        TaskLog('完成：1.1 映射与函数'),
+        TaskLog('开始：1.2 数列的极限'),
+      ],
+    );
     return state;
   }
 
@@ -86,6 +130,108 @@ void main() {
 
       expect(find.text('断开连接'), findsNothing);
       expect(find.text('未连接账号'), findsNWidgets(2), reason: '顶栏与账号卡片各一处');
+    });
+  });
+
+  group('任务执行', () {
+    testWidgets('没有执行记录时给出空态，并能回到课程工作台', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: signedInState()));
+
+      await tester.tap(find.text('执行'));
+      await tester.pump();
+
+      expect(find.text('还没有执行记录'), findsOneWidget);
+      expect(find.text('去课程工作台'), findsOneWidget);
+
+      await tester.tap(find.text('去课程工作台'));
+      await tester.pump();
+
+      expect(find.text('在修课程'), findsOneWidget);
+    });
+
+    testWidgets('运行中显示进度、当前任务点与停止入口', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: runningState()));
+
+      await tester.tap(find.text('执行'));
+      await tester.pump();
+
+      expect(find.text('运行中'), findsOneWidget);
+      expect(find.text('已完成 1 / 3'), findsOneWidget);
+      expect(find.text('1.2 数列的极限'), findsOneWidget);
+      expect(find.text('停止执行'), findsOneWidget);
+      expect(find.text('完成：1.1 映射与函数'), findsOneWidget);
+    });
+
+    testWidgets('已完成的执行给出再次执行，不再显示停止', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: runningState(phase: TaskPhase.succeeded)));
+
+      await tester.tap(find.text('执行'));
+      await tester.pump();
+
+      expect(find.text('已完成'), findsOneWidget);
+      expect(find.text('再次执行'), findsOneWidget);
+      expect(find.text('停止执行'), findsNothing);
+    });
+
+    testWidgets('章节展开后有执行入口，确认前不发起执行', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+      await state.loadPoints(kDemoChapters.first);
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      // 窄屏测试视口：先选课程进入章节下钻页，再展开章节。
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('第一章 函数与极限'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('执行本章视频'), findsOneWidget);
+      expect(find.text('2 个视频任务点 · 按 60 秒步长上报'), findsOneWidget);
+
+      final Finder runButton = find.text('执行本章视频');
+      await tester.ensureVisible(runButton);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(runButton);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('开始执行本章视频'), findsOneWidget);
+      expect(find.textContaining('人脸抽检'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(state.run.hasRun, isFalse);
+      expect(find.text('开始执行本章视频'), findsNothing);
+    });
+
+    testWidgets('确认执行后切到任务执行页并留下日志', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+      await state.loadPoints(kDemoChapters.first);
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      // 窄屏测试视口：先选课程进入章节下钻页，再展开章节。
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('第一章 函数与极限'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final Finder runButton = find.text('执行本章视频');
+      await tester.ensureVisible(runButton);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(runButton);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('开始执行'));
+      await tester.pump();
+      // 等确认框关闭、下钻页退场动画走完，再看执行页。
+      for (int i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(state.run.hasRun, isTrue);
+      expect(find.text('第一章 函数与极限'), findsOneWidget, reason: '状态卡显示本次章节');
+      expect(find.text('执行日志'), findsOneWidget);
+      expect(find.text('已完成'), findsOneWidget);
     });
   });
 }

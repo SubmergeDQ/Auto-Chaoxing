@@ -6,13 +6,15 @@ import 'package:flutter/material.dart';
 
 import '../core/models.dart';
 import '../state/app_state.dart';
+import 'run_console.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
 class ChapterPane extends StatelessWidget {
-  const ChapterPane({super.key, required this.state});
+  const ChapterPane({super.key, required this.state, this.onOpenRun});
 
   final AppState state;
+  final VoidCallback? onOpenRun;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +35,7 @@ class ChapterPane extends StatelessWidget {
         message: '选中课程后，这里会列出章节与任务点，方便和课程列表对照查看。',
       );
     }
-    return _ChapterContent(state: state, course: course);
+    return _ChapterContent(state: state, course: course, onOpenRun: onOpenRun);
   }
 }
 
@@ -52,9 +54,10 @@ Widget _quietHint(String text) {
 }
 
 class ChapterDetailPage extends StatelessWidget {
-  const ChapterDetailPage({super.key, required this.state});
+  const ChapterDetailPage({super.key, required this.state, this.onOpenRun});
 
   final AppState state;
+  final VoidCallback? onOpenRun;
 
   @override
   Widget build(BuildContext context) {
@@ -67,16 +70,17 @@ class ChapterDetailPage extends StatelessWidget {
               title: '课程信息已失效',
               message: '返回课程列表重新选择一门课程。',
             )
-          : _ChapterContent(state: state, course: course),
+          : _ChapterContent(state: state, course: course, onOpenRun: onOpenRun),
     );
   }
 }
 
 class _ChapterContent extends StatelessWidget {
-  const _ChapterContent({required this.state, required this.course});
+  const _ChapterContent({required this.state, required this.course, this.onOpenRun});
 
   final AppState state;
   final Course course;
+  final VoidCallback? onOpenRun;
 
   @override
   Widget build(BuildContext context) {
@@ -162,15 +166,16 @@ class _ChapterContent extends StatelessWidget {
             message: '章节可能尚未开放，或课程页面结构发生了变化。',
           );
         }
-        return _ChapterList(state: state);
+        return _ChapterList(state: state, onOpenRun: onOpenRun);
     }
   }
 }
 
 class _ChapterList extends StatelessWidget {
-  const _ChapterList({required this.state});
+  const _ChapterList({required this.state, this.onOpenRun});
 
   final AppState state;
+  final VoidCallback? onOpenRun;
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +187,7 @@ class _ChapterList extends StatelessWidget {
         state: state,
         chapter: state.chapters[index],
         index: index,
+        onOpenRun: onOpenRun,
       ),
     );
   }
@@ -195,11 +201,13 @@ class _ChapterTile extends StatefulWidget {
     required this.state,
     required this.chapter,
     required this.index,
+    this.onOpenRun,
   });
 
   final AppState state;
   final Chapter chapter;
   final int index;
+  final VoidCallback? onOpenRun;
 
   @override
   State<_ChapterTile> createState() => _ChapterTileState();
@@ -292,7 +300,11 @@ class _ChapterTileState extends State<_ChapterTile> {
               padding: const EdgeInsets.fromLTRB(
                 AcxSpacing.lg, 0, AcxSpacing.lg, AcxSpacing.lg,
               ),
-              child: _PointsView(state: widget.state, chapter: widget.chapter),
+              child: _PointsView(
+                state: widget.state,
+                chapter: widget.chapter,
+                onOpenRun: widget.onOpenRun,
+              ),
             ),
             crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
             duration: AcxDurations.fast,
@@ -305,10 +317,11 @@ class _ChapterTileState extends State<_ChapterTile> {
 }
 
 class _PointsView extends StatelessWidget {
-  const _PointsView({required this.state, required this.chapter});
+  const _PointsView({required this.state, required this.chapter, this.onOpenRun});
 
   final AppState state;
   final Chapter chapter;
+  final VoidCallback? onOpenRun;
 
   @override
   Widget build(BuildContext context) {
@@ -416,7 +429,78 @@ class _PointsView extends StatelessWidget {
             ),
           ),
         ),
+        _RunFooter(
+          state: state,
+          chapter: chapter,
+          points: points,
+          onOpenRun: onOpenRun,
+        ),
       ],
+    );
+  }
+}
+
+/// 章节里的唯一主动作：执行本章视频。执行中、已归档、未连接时给出原因而不是假开关。
+class _RunFooter extends StatelessWidget {
+  const _RunFooter({
+    required this.state,
+    required this.chapter,
+    required this.points,
+    this.onOpenRun,
+  });
+
+  final AppState state;
+  final Chapter chapter;
+  final List<TaskPoint> points;
+  final VoidCallback? onOpenRun;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<TaskPoint> videos = points.where((TaskPoint p) => p.isVideo).toList();
+    if (videos.isEmpty) return const SizedBox.shrink();
+
+    final bool archived = state.selectedCourse?.archived ?? false;
+    final bool busy = state.run.busy;
+    final bool canRun = !archived && !busy && state.signedIn;
+
+    final String hint;
+    if (archived) {
+      hint = '已归档课程不能执行';
+    } else if (!state.signedIn) {
+      hint = '连接账号后才能执行';
+    } else if (busy) {
+      hint = '已有章节在执行，结束后可以再开始';
+    } else {
+      hint = '${videos.length} 个视频任务点 · 按 60 秒步长上报';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AcxSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Divider(height: 1),
+          const SizedBox(height: AcxSpacing.md),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AcxSpacing.md,
+            runSpacing: AcxSpacing.sm,
+            children: <Widget>[
+              Text(hint, style: const TextStyle(fontSize: 12, color: AcxColors.textTertiary)),
+              FilledButton.icon(
+                onPressed: canRun
+                    ? () => unawaited(
+                          startChapterRun(context, state, chapter, onOpenRun: onOpenRun),
+                        )
+                    : null,
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: Text(busy ? '任务执行中' : '执行本章视频'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

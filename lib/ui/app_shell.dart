@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../state/app_state.dart';
 import 'aux_pages.dart';
 import 'courses_page.dart';
+import 'run_console.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -20,9 +21,10 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
-  static const List<String> _titles = <String>['课程工作台', '协议自检', '设置'];
+  static const List<String> _titles = <String>['课程工作台', '任务执行', '协议自检', '设置'];
   static const List<String> _subtitles = <String>[
     '课程、章节与任务点',
+    '执行进度与实时日志',
     '两个本地算法的正确性检查',
     '运行方式与隐私保护',
   ];
@@ -35,8 +37,10 @@ class _AppShellState extends State<AppShell> {
   Widget _body() {
     switch (_index) {
       case 0:
-        return CoursesPage(state: widget.state);
+        return CoursesPage(state: widget.state, onOpenRun: () => _select(1));
       case 1:
+        return RunPage(state: widget.state, onGoToCourses: () => _select(0));
+      case 2:
         return const SelfCheckPage();
       default:
         return SettingsPage(state: widget.state);
@@ -49,7 +53,14 @@ class _AppShellState extends State<AppShell> {
     return AnimatedBuilder(
       animation: widget.state,
       builder: (BuildContext context, Widget? _) {
+        final bool running = widget.state.run.busy;
         final List<Widget> actions = <Widget>[
+          // 全局运行信号：切到自检或设置页时也知道后台还在跑。
+          if (wide && running)
+            const Padding(
+              padding: EdgeInsets.only(right: AcxSpacing.sm),
+              child: AcxStatusBadge(label: '运行中', status: AcxStatus.running),
+            ),
           AcxAccountChip(
             name: widget.state.profile?.name ?? '',
             signedIn: widget.state.signedIn,
@@ -88,18 +99,24 @@ class _AppShellState extends State<AppShell> {
             onDestinationSelected: _select,
             backgroundColor: AcxColors.surface,
             indicatorColor: AcxColors.brandSoft,
-            destinations: const <NavigationDestination>[
-              NavigationDestination(
+            destinations: <NavigationDestination>[
+              const NavigationDestination(
                 icon: Icon(Icons.menu_book_outlined),
                 selectedIcon: Icon(Icons.menu_book_rounded),
                 label: '课程',
               ),
               NavigationDestination(
+                // 窄屏没有顶栏徽章的位置，用底栏小圆点提示后台仍在执行。
+                icon: _runIcon(const Icon(Icons.bolt_outlined), running),
+                selectedIcon: _runIcon(const Icon(Icons.bolt_rounded), running),
+                label: '执行',
+              ),
+              const NavigationDestination(
                 icon: Icon(Icons.science_outlined),
                 selectedIcon: Icon(Icons.science_rounded),
                 label: '自检',
               ),
-              NavigationDestination(
+              const NavigationDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings_rounded),
                 label: '设置',
@@ -108,6 +125,15 @@ class _AppShellState extends State<AppShell> {
           ),
         );
       },
+    );
+  }
+
+  Widget _runIcon(Icon icon, bool running) {
+    if (!running) return icon;
+    return Badge(
+      smallSize: 8,
+      backgroundColor: AcxColors.brand,
+      child: icon,
     );
   }
 }
@@ -176,16 +202,23 @@ class _Sidebar extends StatelessWidget {
             onTap: () => onSelect(0),
           ),
           _NavItem(
-            icon: Icons.science_outlined,
-            label: '协议自检',
+            icon: Icons.bolt_outlined,
+            label: '任务执行',
             selected: index == 1,
             onTap: () => onSelect(1),
+            showRunningDot: state.run.busy,
+          ),
+          _NavItem(
+            icon: Icons.science_outlined,
+            label: '协议自检',
+            selected: index == 2,
+            onTap: () => onSelect(2),
           ),
           _NavItem(
             icon: Icons.settings_outlined,
             label: '设置',
-            selected: index == 2,
-            onTap: () => onSelect(2),
+            selected: index == 3,
+            onTap: () => onSelect(3),
           ),
           const Spacer(),
           const Divider(color: Color(0xFF2C5A52), height: 1),
@@ -230,12 +263,14 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.showRunningDot = false,
   });
 
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool showRunningDot;
 
   @override
   Widget build(BuildContext context) {
@@ -266,6 +301,17 @@ class _NavItem extends StatelessWidget {
                     color: selected ? Colors.white : AcxColors.onSidebarMuted,
                   ),
                 ),
+                if (showRunningDot) ...<Widget>[
+                  const Spacer(),
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF6FD3AE),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

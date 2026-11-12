@@ -11,31 +11,35 @@ import 'theme.dart';
 import 'widgets.dart';
 
 class CoursesPage extends StatelessWidget {
-  const CoursesPage({super.key, required this.state});
+  const CoursesPage({super.key, required this.state, this.onOpenRun});
 
   final AppState state;
+
+  /// 开始执行后切到「任务执行」页看进度，由外壳决定具体怎么切。
+  final VoidCallback? onOpenRun;
 
   @override
   Widget build(BuildContext context) {
     final bool wide = MediaQuery.sizeOf(context).width >= 1100;
-    final Widget list = _CourseListPane(state: state, wide: wide);
+    final Widget list = _CourseListPane(state: state, wide: wide, onOpenRun: onOpenRun);
     if (!wide) return list;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         SizedBox(width: 360, child: list),
         const VerticalDivider(width: 1),
-        Expanded(child: ChapterPane(state: state)),
+        Expanded(child: ChapterPane(state: state, onOpenRun: onOpenRun)),
       ],
     );
   }
 }
 
 class _CourseListPane extends StatelessWidget {
-  const _CourseListPane({required this.state, required this.wide});
+  const _CourseListPane({required this.state, required this.wide, this.onOpenRun});
 
   final AppState state;
   final bool wide;
+  final VoidCallback? onOpenRun;
 
   void _openCourse(BuildContext context, Course course) {
     unawaited(state.selectCourse(course));
@@ -43,7 +47,16 @@ class _CourseListPane extends StatelessWidget {
     unawaited(
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (BuildContext _) => ChapterDetailPage(state: state),
+          builder: (BuildContext _) => ChapterDetailPage(
+            state: state,
+            onOpenRun: onOpenRun == null
+                ? null
+                : () {
+                    // 窄屏在章节下钻页里，先回到根再切页，避免栈里留着旧章节页。
+                    Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+                    onOpenRun!();
+                  },
+          ),
         ),
       ),
     );
