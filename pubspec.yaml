@@ -7,20 +7,20 @@ environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.24.0"
 
-# 说明：第三方插件先不锁版本，首次 `flutter pub get` 成功后请回填精确版本并提交 pubspec.lock。
-# 这类插件迭代快，宽范围会导致"我这能编、你那不能编"。
+# 依赖已按首次 pub get 的解析结果回填 caret 版本；pubspec.lock 是可复现构建的唯一基准，
+# 升级依赖后必须一并提交 lock 文件，避免"我这能编、你那不能编"。
 dependencies:
   flutter:
     sdk: flutter
-  dio: any
-  cookie_jar: any
-  dio_cookie_manager: any
-  crypto: any
-  pointycastle: any
-  flutter_secure_storage: any
-  shared_preferences: any
-  path_provider: any
-  intl: any
+  dio: ^5.11.1
+  cookie_jar: ^4.0.9
+  dio_cookie_manager: ^3.5.0
+  crypto: ^3.0.8
+  pointycastle: ^4.0.0
+  flutter_secure_storage: ^11.2.0
+  shared_preferences: ^2.5.6
+  path_provider: ^2.1.6
+  intl: ^0.20.3
   # 平台能力（按需启用，未启用前不影响编译）
   # flutter_foreground_task: any      # Android 前台服务
   # flutter_inappwebview: any         # Android 登录/作业提交
@@ -31,7 +31,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: any
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

@@ -37,7 +37,8 @@ class ChaoxingApi {
             },
           ),
         ) {
-    _dio.interceptors.add(CookieManager(cookieJar));
+    // 这里必须用字段而不是构造参数：参数是 CookieJar?，字段已保证非空。
+    _dio.interceptors.add(CookieManager(this.cookieJar));
   }
 
   final CookieJar cookieJar;

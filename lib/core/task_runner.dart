@@ -15,7 +15,7 @@ class TaskLog {
   final DateTime at = DateTime.now();
 
   @override
-  String toString() => '[${level}] $message';
+  String toString() => '[$level] $message';
 }
 
 class TaskProgress {
