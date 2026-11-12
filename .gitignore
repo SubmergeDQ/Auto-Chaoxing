@@ -1,34 +1,64 @@
-# Flutter / Dart
+# Dart / Flutter
 .dart_tool/
 .packages
 .pub-cache/
 .pub/
-build/
 .flutter-plugins
 .flutter-plugins-dependencies
-# 应用类项目：pubspec.lock 必须提交，用于锁定可复现的依赖
+build/
+coverage/
+.fvm/flutter_sdk
 
-# IDE
-.idea/
-.vscode/
-*.iml
+# 这是应用项目，pubspec.lock 必须提交以锁定可复现的依赖，
+# 所以这里刻意不忽略 pubspec.lock。
 
-# 平台产物
+# 平台工程产物
 android/.gradle/
+android/local.properties
 android/key.properties
-android/app/release.jks
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/captures/
 windows/flutter/ephemeral/
+windows/.vs/
+obj/
 *.msix
 *.msixupload
+*.appx
 *.apk
 *.aab
 
-# 运行期敏感文件：cookie、诊断导出
+# IDE / 编辑器
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Python 协议验证脚本
+core/__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 凭据与运行期敏感数据：cookie、题库 token、签名密钥、诊断包一律不入库
 cookies.txt
 *.cookie
 state.json
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
 diagnostics-*.zip
+*.log
 
-# 系统
+# 本地工具数据与设计过程文件
+.workbuddy/
+.oil-ui/
+
+# 操作系统
 .DS_Store
 Thumbs.db
+desktop.ini
