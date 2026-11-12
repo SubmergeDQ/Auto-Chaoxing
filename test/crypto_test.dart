@@ -9,8 +9,16 @@ void main() {
     });
 
     test('AES-CBC 登录加密固定向量', () {
-      // 与 core/chaoxing_core.py 的 aes_cbc_b64("123456") 输出一致
-      expect(aesCbcBase64('123456'), 'FiK1hSgSEgMeqWPSRhRB+A==');
+      // 与 core/chaoxing_core.py 的 aes_cbc_b64("123456") 输出一致。
+      // 另一路独立验证：openssl enc -d -aes-128-cbc -K/-iv <hex(u2oh6Vu^HWe4_AES)>
+      // 能解出明文 123456。
+      expect(aesCbcBase64('123456'), '0QgUbMUJj2usHikiqtb8HQ==');
+    });
+
+    test('登录密钥是平台写死的固定值，首字母是 u', () {
+      // 曾经写成 m2oh6Vu^HWe4_AES，服务端解不出明文，一律回「用户名或密码错误」，
+      // 表现为「密码明明是对的却登不上」。这行是唯一能挡住该回归的断言。
+      expect(kLoginAesKey, 'u2oh6Vu^HWe4_AES');
     });
 
     test('视频进度签名固定向量', () {

@@ -23,7 +23,7 @@ class SelfCheckPage extends StatefulWidget {
 }
 
 class _SelfCheckPageState extends State<SelfCheckPage> {
-  static const String _aesExpect = 'FiK1hSgSEgMeqWPSRhRB+A==';
+  static const String _aesExpect = '0QgUbMUJj2usHikiqtb8HQ==';
   static const String _encExpect = 'f72245dce1271d7e6039a4f3110a0575';
 
   KeepAliveProbe get _probe => widget.probe;

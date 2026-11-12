@@ -30,7 +30,7 @@ import http.cookiejar
 UA = ("Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
 COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
-AES_KEY = b"m2oh6Vu^HWe4_AES"          # 学习通 fanyalogin 的固定 key（同时作 iv）
+AES_KEY = b"u2oh6Vu^HWe4_AES"          # 学习通 fanyalogin 的固定 key（同时作 iv）
 SIGN_SALT = "d_yHJ!$pdA~5"             # 视频进度 enc 的固定盐
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 

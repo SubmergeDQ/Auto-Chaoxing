@@ -8,7 +8,7 @@ import 'package:pointycastle/export.dart';
 
 /// 学习通 fanyalogin 的固定 AES 密钥（同时作为 IV）。
 /// 注意：这是平台侧写死的常量，不是本项目生成的密钥。
-const String kLoginAesKey = 'm2oh6Vu^HWe4_AES';
+const String kLoginAesKey = 'u2oh6Vu^HWe4_AES';
 
 /// 视频进度签名里的固定盐。
 const String kProgressSalt = r'd_yHJ!$pdA~5';
