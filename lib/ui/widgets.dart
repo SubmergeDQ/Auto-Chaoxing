@@ -268,43 +268,48 @@ class AcxTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: AcxSpacing.xl),
-      decoration: const BoxDecoration(
-        color: AcxColors.surface,
-        border: Border(bottom: BorderSide(color: AcxColors.border)),
-      ),
-      child: Row(
-        children: <Widget>[
-          Flexible(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AcxColors.textPrimary,
-                  ),
-                ),
-                if (subtitle != null)
+    // Scaffold 只给 appBar 一个槽位，不会替自定义顶栏让出状态栏的高度
+    // （那是 AppBar 自己做的）。桌面端 padding 为 0，手机上不加就会被状态栏压住。
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: AcxSpacing.xl),
+        decoration: const BoxDecoration(
+          color: AcxColors.surface,
+          border: Border(bottom: BorderSide(color: AcxColors.border)),
+        ),
+        child: Row(
+          children: <Widget>[
+            Flexible(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
                   Text(
-                    subtitle!,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AcxColors.textPrimary,
+                    ),
                   ),
-              ],
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
+                    ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AcxSpacing.lg),
-          ...actions,
-        ],
+            const SizedBox(width: AcxSpacing.lg),
+            ...actions,
+          ],
+        ),
       ),
     );
   }
