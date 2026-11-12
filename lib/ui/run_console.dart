@@ -24,9 +24,10 @@ Future<void> startChapterRun(
   final int videoCount = (state.pointsFor(chapter.chapterId) ?? const <TaskPoint>[])
       .where((TaskPoint p) => p.isVideo)
       .length;
+  // 一行一件事：范围 / 会怎么跑 / 什么时候停。挤成一段会把对话框撑到满屏。
   final String scope = videoCount > 0
-      ? '将处理「${chapter.title}」中的 $videoCount 个视频任务点，文档与作业不在本次范围。'
-      : '将处理「${chapter.title}」中的视频任务点，文档与作业不在本次范围。';
+      ? '将处理「${chapter.title}」中的 $videoCount 个视频任务点。'
+      : '将处理「${chapter.title}」中的视频任务点。';
 
   final bool? confirmed = await showDialog<bool>(
     context: context,
@@ -38,11 +39,17 @@ Future<void> startChapterRun(
         '开始执行本章视频',
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AcxColors.textPrimary),
       ),
-      content: Text(
-        '$scope执行时平台已通过的会跳过、已看过的从中间继续，'
-        '耗时与视频总长相近，期间可以随时停止。\n\n'
-        '遇到人脸抽检、验证码或登录失效会立即停止，交回你自己处理。',
-        style: const TextStyle(fontSize: 13, height: 1.6, color: AcxColors.textSecondary),
+      // 定宽：不写宽度时 AlertDialog 会跟着最长那一行走，桌面端会拉成一条。
+      content: SizedBox(
+        width: 372,
+        child: Text(
+          // 断行位置是写死的：中文在这里按字换行，"作业" 和 "处理。" 被拆开很难看。
+          '$scope\n文档与作业不在本次范围。\n\n'
+          '执行时平台已通过的会跳过，已看过的从中间继续。\n'
+          '耗时与视频总长相近，期间可以随时停止。\n\n'
+          '遇到人脸抽检、验证码或登录失效会立即停止，\n交回你自己处理。',
+          style: const TextStyle(fontSize: 13, height: 1.7, color: AcxColors.textSecondary),
+        ),
       ),
       actionsPadding: const EdgeInsets.fromLTRB(AcxSpacing.xl, 0, AcxSpacing.xl, AcxSpacing.xl),
       actions: <Widget>[
