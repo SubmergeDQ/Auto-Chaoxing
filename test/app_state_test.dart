@@ -1,4 +1,5 @@
 import 'package:auto_chaoxing/core/models.dart';
+import 'package:auto_chaoxing/platform/platform_services.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,7 +8,10 @@ import 'support/fake_api.dart';
 void main() {
   group('AppState', () {
     test('初始为未登录 / idle', () {
-      final AppState state = AppState(api: FakeChaoxingApi());
+      final AppState state = AppState(
+        api: FakeChaoxingApi(),
+        runKeeper: const NoopRunKeeper(),
+      );
       expect(state.signedIn, isFalse);
       expect(state.coursesState, LoadState.idle);
       expect(state.selectedCourse, isNull);
@@ -15,7 +19,7 @@ void main() {
 
     test('登录成功后自动拉课程并更新计数', () async {
       final FakeChaoxingApi api = FakeChaoxingApi(courses: kDemoCourses);
-      final AppState state = AppState(api: api);
+      final AppState state = AppState(api: api, runKeeper: const NoopRunKeeper());
 
       final String? error = await state.signIn('13800000000', 'secret');
 
@@ -31,7 +35,7 @@ void main() {
 
     test('登录失败返回可读文案，且不触发课程请求', () async {
       final FakeChaoxingApi api = FakeChaoxingApi(loginError: '密码错误');
-      final AppState state = AppState(api: api);
+      final AppState state = AppState(api: api, runKeeper: const NoopRunKeeper());
 
       final String? error = await state.signIn('13800000000', 'wrong');
 
@@ -46,6 +50,7 @@ void main() {
           loginError: '需要验证码',
           loginErrorCode: 'needsAttention',
         ),
+        runKeeper: const NoopRunKeeper(),
       );
 
       final String? error = await state.signIn('13800000000', 'secret');
@@ -56,7 +61,7 @@ void main() {
 
     test('课程读取失败进入 error 且保留重试能力', () async {
       final FakeChaoxingApi api = FakeChaoxingApi(coursesError: '连接超时');
-      final AppState state = AppState(api: api);
+      final AppState state = AppState(api: api, runKeeper: const NoopRunKeeper());
       await state.signIn('13800000000', 'secret');
       expect(state.coursesState, LoadState.error);
       expect(state.coursesError, '连接超时');
@@ -75,7 +80,7 @@ void main() {
         chapters: kDemoChapters,
         points: kDemoPoints,
       );
-      final AppState state = AppState(api: api);
+      final AppState state = AppState(api: api, runKeeper: const NoopRunKeeper());
       await state.signIn('13800000000', 'secret');
 
       await state.selectCourse(kDemoCourses.first);
@@ -95,6 +100,7 @@ void main() {
     test('章节未开放映射为可读提示，不当作解析失败', () async {
       final AppState state = AppState(
         api: FakeChaoxingApi(chapters: kDemoChapters, cardsErrorCode: 'locked'),
+        runKeeper: const NoopRunKeeper(),
       );
       state.profile = const Profile(uid: '10086', name: '林知远', fid: '666');
       await state.selectCourse(kDemoCourses.first);
@@ -108,6 +114,7 @@ void main() {
     test('断开连接清空账号、课程与章节缓存', () async {
       final AppState state = AppState(
         api: FakeChaoxingApi(courses: kDemoCourses, chapters: kDemoChapters),
+        runKeeper: const NoopRunKeeper(),
       );
       await state.signIn('13800000000', 'secret');
       await state.selectCourse(kDemoCourses.first);

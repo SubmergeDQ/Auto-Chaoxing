@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:auto_chaoxing/core/task_runner.dart';
+import 'package:auto_chaoxing/platform/platform_services.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:auto_chaoxing/state/run_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_api.dart';
+import 'support/fake_run_keeper.dart';
 
 Future<void> _noSleep(Duration _) async {}
 
@@ -15,8 +17,12 @@ Future<void> _waitFor(bool Function() condition) async {
   }
 }
 
-AppState _stateWith(FakeChaoxingApi api) {
-  final AppState state = AppState(api: api, sleep: _noSleep);
+AppState _stateWith(FakeChaoxingApi api, {RunKeeperStub? keeper}) {
+  final AppState state = AppState(
+    api: api,
+    sleep: _noSleep,
+    runKeeper: keeper ?? const NoopRunKeeper(),
+  );
   state.profile = api.demoProfile;
   state.coursesState = LoadState.ready;
   state.courses = kDemoCourses;
@@ -143,6 +149,71 @@ void main() {
 
       expect(state.run.logs.length, lessThanOrEqualTo(RunController.maxLogs));
       expect(state.run.logs.length, RunController.maxLogs);
+    });
+  });
+
+  group('后台保活', () {
+    test('执行期间起保活，结束后换成结果通知', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: kDemoPoints);
+      final RunKeeperStub keeper = RunKeeperStub();
+      final AppState state = _stateWith(api, keeper: keeper);
+
+      await state.run.start(course: kDemoCourses.first, chapter: kDemoChapters.first);
+
+      expect(keeper.beginCalls, 1);
+      // 标题要能让人在通知栏认出是哪一章。
+      expect(keeper.beginTitle, contains('第一章 函数与极限'));
+      // 进度确实在往通知上走，不是起了一次就再也不更新。
+      expect(keeper.notices.length, greaterThan(1));
+      expect(keeper.notices.any((String s) => s.contains('已通过')), isTrue);
+
+      expect(keeper.finishCalls, 1);
+      expect(keeper.finishedTitle, contains('本次执行完成'));
+      expect(keeper.finishedBody, '已通过 2 / 2');
+      expect(keeper.endCalls, 0);
+    });
+
+    test('保活起不来时记一条告警，执行照常完成', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: kDemoPoints);
+      final RunKeeperStub keeper = RunKeeperStub(beginResult: false);
+      final AppState state = _stateWith(api, keeper: keeper);
+
+      await state.run.start(course: kDemoCourses.first, chapter: kDemoChapters.first);
+
+      expect(state.run.phase, TaskPhase.succeeded);
+      expect(
+        state.run.logs.any((TaskLog l) => l.level == 'warn' && l.message.contains('后台保活未启用')),
+        isTrue,
+      );
+      // 没起来就不该跳过去刷通知或发结果。
+      expect(keeper.updateCalls, 0);
+      expect(keeper.finishCalls, 0);
+      expect(keeper.endCalls, 0);
+    });
+
+    test('通知栏点停止等价于页面上点停止执行', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: kDemoPoints);
+      final RunKeeperStub keeper = RunKeeperStub();
+      final AppState state = _stateWith(api, keeper: keeper);
+      // 卡住第一次上报，好在「执行中」这个窗口里点停止。
+      api.reportGate = Completer<void>();
+
+      final Future<void> running =
+          state.run.start(course: kDemoCourses.first, chapter: kDemoChapters.first);
+      await _waitFor(() => api.reportCalls > 0);
+      expect(state.run.busy, isTrue);
+
+      keeper.tapStopOnNotification();
+      await _waitFor(() => state.run.progress.message == '正在停止…');
+      expect(state.run.progress.message, '正在停止…');
+
+      api.reportGate!.complete();
+      api.reportGate = null;
+      await running;
+
+      expect(state.run.phase, TaskPhase.stopped);
+      // 用户主动叫停不是失败，不该发「本次执行完成」。
+      expect(keeper.finishedTitle, contains('已停止'));
     });
   });
 }
