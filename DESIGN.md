@@ -34,10 +34,12 @@
 
 - 组件基础：Flutter 原生 Material 3，不引入第三方组件库；图标统一 MaterialIcons（Agent 推断）
 - `lib/ui/widgets.dart`：状态徽章、区块卡片、空态、错误态、指标、账号标记、单行顶栏（Agent 推断）
-- `lib/ui/app_shell.dart`：宽屏侧栏 + 单行顶栏；窄屏底栏导航（Agent 推断）
+- `lib/ui/app_shell.dart`：宽屏侧栏 + 单行顶栏；窄屏底栏导航。一级导航三项：
+  课程工作台 / 任务执行 / 设置；设置内的二级页（自检、运行约束、隐私）由 `_sub` 状态切换，
+  不压 Navigator 栈——宽屏压栈会把侧栏一起盖掉
 - `lib/ui/courses_page.dart` 与 `lib/ui/chapter_view.dart`：课程列表、章节伴随面板 / 下钻页、自定义章节展开卡片（Agent 推断）
 - `lib/ui/run_console.dart`：任务执行页（状态卡 + 日志控制台）与章节执行入口（Agent 推断）
-- `lib/ui/aux_pages.dart`：协议自检页、设置页（Agent 推断）
+- `lib/ui/aux_pages.dart`：设置页与三个二级页（协议自检 / 运行约束 / 隐私与数据）
 - 新页面先复用上述组件，不另画一套（Agent 推断）
 
 ## 执行页与日志控制台

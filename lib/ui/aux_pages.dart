@@ -75,7 +75,7 @@ class SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: AcxSpacing.xxl),
           const Text(
-            'Auto-Chaoxing · 客户端 v0.3.2\n'
+            'Auto-Chaoxing · 客户端 v0.3.3\n'
             '仅用于本人账号与已选修课程，不代写作业、不代交考试。',
             style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textTertiary),
           ),
