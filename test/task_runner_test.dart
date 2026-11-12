@@ -154,5 +154,107 @@ void main() {
       expect(r.message, '本章没有视频任务点');
       expect(api.statusCalls, 0);
     });
+
+    test('平台已标记通过的任务点整段跳过，不发起任何上报', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          TaskPoint(
+            type: 'video',
+            jobId: 'j-101',
+            name: '1.1 映射与函数',
+            objectId: 'o-101',
+            passed: true,
+          ),
+          TaskPoint(type: 'video', jobId: 'j-103', name: '1.2 数列的极限', objectId: 'o-103'),
+        ],
+      );
+      final List<TaskLog> logs = <TaskLog>[];
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
+      final VideoRunnerResult r = await runner.runChapterVideos(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(r.skipped, <String>['1.1 映射与函数']);
+      expect(r.completed, <String>['1.2 数列的极限']);
+      // 只给没通过的那个任务点发上报：0 / 60 / 120。
+      expect(api.reportCalls, 3);
+      expect(
+        logs.any((TaskLog l) => l.message.contains('跳过：1.1 映射与函数')),
+        isTrue,
+        reason: '跳过要在日志里说出来，否则用户以为白跑了',
+      );
+      expect(logs.last.message, contains('2 / 2 个任务点已通过'));
+    });
+
+    test('卡片给出累计时长时从该处继续，不从头重刷', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          TaskPoint(
+            type: 'video',
+            jobId: 'j-101',
+            name: '1.1 映射与函数',
+            objectId: 'o-101',
+            attDuration: '60',
+          ),
+        ],
+      );
+      final List<TaskLog> logs = <TaskLog>[];
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
+      final VideoRunnerResult r = await runner.runChapterVideos(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(r.resumed, <String>['1.1 映射与函数']);
+      expect(api.reportedTimes, <int>[60, 120], reason: '从 60s 起跑，只需两次上报');
+      expect(logs.any((TaskLog l) => l.message.contains('从 1:00 继续')), isTrue);
+    });
+
+    test('累计时长超出视频总长时夹到结尾，只发一次收尾上报', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          TaskPoint(
+            type: 'video',
+            jobId: 'j-101',
+            name: '1.1 映射与函数',
+            objectId: 'o-101',
+            attDuration: '9999',
+          ),
+        ],
+      );
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
+      final VideoRunnerResult r = await runner.runChapterVideos(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(api.reportedTimes, <int>[120]);
+    });
+
+    test('卡片没给累计时长与通过标记时，行为与从前一致（从 0 开始）', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          TaskPoint(type: 'video', jobId: 'j-101', name: '1.1 映射与函数', objectId: 'o-101'),
+        ],
+      );
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
+      final VideoRunnerResult r = await runner.runChapterVideos(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(api.reportedTimes, <int>[0, 60, 120]);
+      expect(r.skipped, isEmpty);
+      expect(r.resumed, isEmpty);
+    });
   });
 }

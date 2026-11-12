@@ -54,6 +54,9 @@ class FakeChaoxingApi extends ChaoxingApi {
   int reportCalls = 0;
   int statusCalls = 0;
 
+  /// 每次上报的 playingTime，按调用顺序记录，用来断言续跑起点。
+  final List<int> reportedTimes = <int>[];
+
   @override
   Future<Result<Profile>> login(String username, String password) async {
     loginCalls++;
@@ -130,6 +133,7 @@ class FakeChaoxingApi extends ChaoxingApi {
     required int duration,
   }) async {
     reportCalls++;
+    reportedTimes.add(playTime);
     final Completer<void>? gate = reportGate;
     if (gate != null && !gate.isCompleted) await gate.future;
     if (authExpiredOnReport ||

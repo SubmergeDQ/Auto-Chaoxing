@@ -20,12 +20,12 @@ void main() {
     return state;
   }
 
-  AppState courseSelectedState() {
+  AppState courseSelectedState({List<TaskPoint> points = kDemoPoints}) {
     final AppState state = AppState(
       api: FakeChaoxingApi(
         courses: kDemoCourses,
         chapters: kDemoChapters,
-        points: kDemoPoints,
+        points: points,
       ),
       // 零延时，避免 Widget 测试等真实秒级节流。
       sleep: (Duration _) async {},
@@ -233,6 +233,42 @@ void main() {
 
       expect(state.run.hasRun, isFalse);
       expect(find.text('开始执行本章视频'), findsNothing);
+    });
+
+    testWidgets('重跑前说明哪些已通过会跳过、哪些从中间继续', (WidgetTester tester) async {
+      final AppState state = courseSelectedState(
+        points: const <TaskPoint>[
+          TaskPoint(
+            type: 'video',
+            jobId: 'j-101',
+            name: '1.1 映射与函数',
+            objectId: 'o-101',
+            passed: true,
+          ),
+          TaskPoint(
+            type: 'video',
+            jobId: 'j-103',
+            name: '1.2 数列的极限',
+            objectId: 'o-103',
+            attDuration: '60',
+          ),
+          TaskPoint(type: 'document', jobId: 'j-102', name: '第一章课程讲义.pdf'),
+        ],
+      );
+      await state.loadPoints(kDemoChapters.first);
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('第一章 函数与极限'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.text('2 个视频任务点 · 1 个平台已通过将跳过，1 个从中间继续'),
+        findsOneWidget,
+        reason: '任务点没动时用户要能查到这里说了会跳过',
+      );
     });
 
     testWidgets('确认执行后切到任务执行页并留下日志', (WidgetTester tester) async {
