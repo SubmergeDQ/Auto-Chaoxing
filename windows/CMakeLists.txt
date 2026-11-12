@@ -41,6 +41,10 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
   target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
   target_compile_options(${TARGET} PRIVATE /EHsc)
+  # 源码里有中文（窗口标题、注释）。MSVC 默认按系统代码页（936）读源文件，
+  # 遇到 UTF-8 中文会报 C4819，而 /WX 会把这条警告直接升级成编译失败。
+  # 显式声明源码是 UTF-8，比让每个人「另存为带 BOM」可靠。
+  target_compile_options(${TARGET} PRIVATE /utf-8)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 endfunction()

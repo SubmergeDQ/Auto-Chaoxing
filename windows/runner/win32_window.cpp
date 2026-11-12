@@ -216,6 +216,17 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+
+    // 窗口拖到 800x600 以下时布局会被挤扁：侧栏 + 主区域放不下，
+    // 课程主从双栏也会退化成一团。这里给一个下限，而不是等用户拉坏再解释。
+    case WM_GETMINMAXINFO: {
+      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      const UINT dpi = GetDpiForWindow(hwnd);
+      const double scale = dpi > 0 ? dpi / 96.0 : 1.0;
+      info->ptMinTrackSize.x = Scale(900, scale);
+      info->ptMinTrackSize.y = Scale(600, scale);
+      return 0;
+    }
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);

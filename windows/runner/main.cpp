@@ -26,8 +26,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"Auto-Chaoxing", origin, size)) {
+  // 1280 宽刚好越过 1000 的宽屏断点，默认就以「侧栏 + 主从双栏」打开；
+  // 高度给到 820，课程页的指标行 + 列表不用一进来就滚动。
+  Win32Window::Size size(1280, 820);
+  if (!window.Create(L"Auto-Chaoxing · 学习通客户端", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

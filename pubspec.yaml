@@ -17,7 +17,9 @@ dependencies:
   dio_cookie_manager: ^3.5.0
   crypto: ^3.0.8
   pointycastle: ^4.0.0
-  flutter_secure_storage: ^11.2.0
+  # 没有 flutter_secure_storage：本项目不保存密码，只把登录会话（cookie）落盘。
+  # 它的 Windows 实现依赖 ATL（atlstr.h），会让本机 MSVC 构建直接失败，
+  # 而我们根本用不到那个能力，不如不引入。
   shared_preferences: ^2.5.6
   path_provider: ^2.1.6
   intl: ^0.20.3
