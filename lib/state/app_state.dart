@@ -6,12 +6,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/version.dart';
+
 import '../core/chaoxing_api.dart';
 import '../core/models.dart';
 import '../platform/platform_services.dart';
 import '../platform/run_keeper_android.dart';
 import 'keep_alive_probe.dart';
 import 'run_controller.dart';
+import 'update_state.dart';
 
 enum LoadState { idle, loading, ready, error }
 
@@ -21,10 +24,13 @@ class AppState extends ChangeNotifier {
     Future<void> Function(Duration)? sleep,
     RunKeeper? runKeeper,
     Future<void> Function()? purgeSession,
+    UpdateState? update,
   })  : api = api ?? ChaoxingApi(),
         _sleep = sleep,
         runKeeper = runKeeper ?? createRunKeeper(),
-        _purgeSession = purgeSession {
+        _purgeSession = purgeSession,
+        update = update ??
+            UpdateState(currentVersion: kAppVersion, quitApp: quitApplication) {
     run = RunController(
       api: this.api,
       onChanged: _notify,
@@ -51,6 +57,11 @@ class AppState extends ChangeNotifier {
   /// 执行会话：进度、日志与停止入口都在这里。
   late final RunController run;
 
+  /// 检查更新。放在 AppState：启动时的自动检查与关于页的手动检查要共用
+  /// 同一个节流时间戳，否则「5 分钟只查一次」在两边各算各的。
+  /// 可注入：widget 测试不该真的去打 GitHub。
+  final UpdateState update;
+
   bool _disposed = false;
 
   void _notify() {
@@ -62,6 +73,7 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     probe.dispose();
+    update.dispose();
     run.dispose();
     runKeeper.dispose();
     super.dispose();
@@ -82,6 +94,9 @@ class AppState extends ChangeNotifier {
   /// 用户此刻只是想打开应用，不是想听一次失败通知。
   Future<void> bootstrap() async {
     await _loadRememberedUsername();
+    // 自动检查更新不 await：开屏不该等 GitHub。内部有 5 分钟节流，
+    // 连续开合应用不会反复打接口。
+    unawaited(update.checkForUpdates());
     await restoreSession();
   }
 

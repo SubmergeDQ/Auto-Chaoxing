@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
+import 'about_page.dart';
 import 'aux_pages.dart';
 import 'courses_page.dart';
 import 'run_console.dart';
@@ -63,6 +64,7 @@ class _AppShellState extends State<AppShell> {
         SettingsSubPage.selfCheck => SelfCheckPage(probe: widget.state.probe),
         SettingsSubPage.constraints => const ConstraintsPage(),
         SettingsSubPage.privacy => PrivacyPage(state: widget.state),
+        SettingsSubPage.about => AboutPage(update: widget.state.update),
       };
     }
     switch (_index) {
@@ -71,7 +73,11 @@ class _AppShellState extends State<AppShell> {
       case 1:
         return RunPage(state: widget.state, onGoToCourses: () => _select(0));
       default:
-        return SettingsPage(state: widget.state, onOpen: _openSub);
+        return SettingsPage(
+          state: widget.state,
+          onOpen: _openSub,
+          update: widget.state.update,
+        );
     }
   }
 

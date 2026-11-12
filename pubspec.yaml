@@ -23,6 +23,7 @@ dependencies:
   shared_preferences: ^2.5.6
   path_provider: ^2.1.6
   intl: ^0.20.3
+  url_launcher: ^6.3.3
   # 平台能力（按需启用，未启用前不影响编译）
   # flutter_foreground_task: any      # Android 前台服务
   # flutter_inappwebview: any         # Android 登录/作业提交

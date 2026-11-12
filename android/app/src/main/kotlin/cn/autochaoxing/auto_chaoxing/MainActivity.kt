@@ -3,15 +3,21 @@ package cn.autochaoxing.auto_chaoxing
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "cn.autochaoxing/run_keeper"
+        private const val CHANNEL_INSTALLER = "cn.autochaoxing/installer"
+        private const val CHANNEL_SYSTEM = "cn.autochaoxing/system"
         private const val REQ_NOTIFICATIONS = 0xAC1
     }
 
@@ -72,6 +78,137 @@ class MainActivity : FlutterActivity() {
 
                 else -> result.notImplemented()
             }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_INSTALLER)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // 拉起系统安装器。返回 false 只代表 Intent 没发出去（文件不在、
+                    // FileProvider 配置错），真正的「装不装」由系统弹窗决定。
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        result.success(if (path.isNullOrEmpty()) false else installApk(path))
+                    }
+
+                    // Android 8+ 需要用户为「这个应用」单独允许安装未知来源应用。
+                    "canInstall" -> result.success(canRequestPackageInstalls())
+
+                    "openInstallSettings" -> {
+                        openInstallSettings()
+                        result.success(null)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_SYSTEM)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // 保活引导：是否已被排除在电池优化之外（= 省电策略「无限制」）
+                    "isIgnoringBatteryOptimizations" -> result.success(isIgnoringBatteryOptimizations())
+
+                    // 只发系统标准弹窗，不跳设置页：用户点「允许」一步到位。
+                    // 个别 ROM 会拦截该 Intent，此时退回电池优化列表页。
+                    "requestIgnoreBatteryOptimizations" -> {
+                        result.success(requestIgnoreBatteryOptimizations())
+                    }
+
+                    "openBatterySettings" -> {
+                        openBatterySettings()
+                        result.success(null)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /** 文件必须放在 res/xml/file_paths.xml 声明的目录下，否则 FileProvider 会抛异常。 */
+    private fun installApk(path: String): Boolean = try {
+        val file = File(path)
+        if (!file.exists() || file.length() == 0L) {
+            false
+        } else {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            true
+        }
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun canRequestPackageInstalls(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                packageManager.canRequestPackageInstalls()
+            } catch (e: Exception) {
+                true
+            }
+        } else {
+            true
+        }
+
+    private fun openInstallSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:$packageName"),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (e: Exception) {
+            // 部分 ROM 没有这个页面，退到应用详情页。
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.parse("package:$packageName"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        return try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun requestIgnoreBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        if (isIgnoringBatteryOptimizations()) return true
+        return try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:$packageName"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            true
+        } catch (e: Exception) {
+            openBatterySettings()
+            false
+        }
+    }
+
+    private fun openBatterySettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            startActivity(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {
         }
     }
 

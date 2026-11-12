@@ -11,12 +11,13 @@ import '../core/crypto.dart';
 import '../core/models.dart';
 import '../state/app_state.dart';
 import '../state/keep_alive_probe.dart';
+import '../state/update_state.dart';
 import 'courses_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// 设置页能下钻的三页。
-enum SettingsSubPage { selfCheck, constraints, privacy }
+/// 设置页能下钻的四个二级页。
+enum SettingsSubPage { selfCheck, constraints, privacy, about }
 
 /// 二级页的标题与说明，由外壳读取后交给顶栏。
 ({String title, String subtitle}) describeSubPage(SettingsSubPage page) {
@@ -24,14 +25,26 @@ enum SettingsSubPage { selfCheck, constraints, privacy }
     SettingsSubPage.selfCheck => (title: '协议自检', subtitle: '登录加密、进度签名与后台计时'),
     SettingsSubPage.constraints => (title: '运行约束', subtitle: '这个客户端会做与不会做的事'),
     SettingsSubPage.privacy => (title: '隐私与数据', subtitle: '哪些数据留在本机，怎么彻底删除'),
+    SettingsSubPage.about => (title: '关于', subtitle: '版本、仓库地址与检查更新'),
   };
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.state, required this.onOpen});
+  const SettingsPage({
+    super.key,
+    required this.state,
+    required this.onOpen,
+    this.update,
+  });
 
   final AppState state;
   final ValueChanged<SettingsSubPage> onOpen;
+
+  /// 有新版本时在「关于」入口上点一个提示点，用户不必自己进去才发现。
+  final UpdateState? update;
+
+  static String _aboutDetail(UpdateState u) =>
+      u.hasUpdate ? '发现新版本 ${u.latest?.version ?? ''}' : '版本、仓库地址与检查更新';
 
   @override
   Widget build(BuildContext context) {
@@ -70,13 +83,20 @@ class SettingsPage extends StatelessWidget {
                   detail: '日志脱敏、会话存放位置、彻底清除',
                   onTap: () => onOpen(SettingsSubPage.privacy),
                 ),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.info_outline_rounded,
+                  title: '关于',
+                  detail: update == null ? '版本与仓库地址' : _aboutDetail(update!),
+                  badge: update?.hasUpdate == true,
+                  onTap: () => onOpen(SettingsSubPage.about),
+                ),
               ],
             ),
           ),
           const SizedBox(height: AcxSpacing.xxl),
           const Text(
-            'Auto-Chaoxing · 客户端 v0.3.3\n'
-            '仅用于本人账号与已选修课程，不代写作业、不代交考试。',
+            'Auto-Chaoxing · 客户端 v0.3.3',
             style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textTertiary),
           ),
         ],
@@ -174,12 +194,14 @@ class _SettingsTile extends StatelessWidget {
     required this.title,
     required this.detail,
     required this.onTap,
+    this.badge = false,
   });
 
   final IconData icon;
   final String title;
   final String detail;
   final VoidCallback onTap;
+  final bool badge;
 
   @override
   Widget build(BuildContext context) {
@@ -198,13 +220,28 @@ class _SettingsTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AcxColors.textPrimary,
-                      ),
+                    Row(
+                      children: <Widget>[
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AcxColors.textPrimary,
+                          ),
+                        ),
+                        if (badge) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: AcxColors.brand,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 3),
                     Text(

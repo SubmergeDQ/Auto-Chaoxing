@@ -2,12 +2,28 @@ import 'package:auto_chaoxing/core/models.dart';
 import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/main.dart';
 import 'package:auto_chaoxing/platform/platform_services.dart';
+import 'package:auto_chaoxing/core/update/app_release.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:auto_chaoxing/state/keep_alive_probe.dart';
+import 'package:auto_chaoxing/state/update_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_api.dart';
 import 'support/fake_run_keeper.dart';
+import 'support/fake_update.dart';
+
+/// 检查更新在 widget 测试里必须被挡住：既不该真去打 GitHub，
+/// 也不该让 bootstrap 的自动检查影响首帧。
+UpdateState noUpdateState() => UpdateState(
+      checker: FakeUpdateChecker(noRelease: true),
+      installer: FakeInstaller(),
+      throttle: UpdateThrottle(
+        read: () async => DateTime.now(),
+        write: (DateTime _) async {},
+      ),
+      currentVersion: '0.3.3',
+      quitApp: () async {},
+    );
 
 void main() {
   AppState signedInState({List<Course> courses = kDemoCourses, RunKeeper? keeper}) {
@@ -15,6 +31,7 @@ void main() {
       api: FakeChaoxingApi(courses: courses),
       // 测试环境没有原生通道：显式用 Noop，避免多出一条「保活未启用」的告警干扰断言。
       runKeeper: keeper ?? const NoopRunKeeper(),
+      update: noUpdateState(),
     );
     state.profile = const Profile(
       uid: '10086',
@@ -37,6 +54,7 @@ void main() {
       // 零延时，避免 Widget 测试等真实秒级节流。
       sleep: (Duration _) async {},
       runKeeper: const NoopRunKeeper(),
+      update: noUpdateState(),
     );
     state.profile = const Profile(uid: '10086', name: '林知远', fid: '666');
     state.coursesState = LoadState.ready;
@@ -142,6 +160,27 @@ void main() {
       await tester.pump();
       expect(find.text('单账号串行'), findsNothing);
       expect(find.text('协议自检'), findsOneWidget);
+    });
+
+    testWidgets('关于页给出仓库地址、版本与检查更新入口', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: signedInState()));
+
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      await tester.tap(find.text('关于'));
+      await tester.pump();
+
+      expect(find.text('Auto-Chaoxing'), findsOneWidget);
+      expect(find.textContaining('github.com/SubmergeDQ/Auto-Chaoxing'), findsOneWidget);
+      expect(find.text('当前版本 v0.3.3'), findsOneWidget);
+      expect(find.text('检查更新'), findsOneWidget);
+    });
+
+    testWidgets('设置里不再有那行免责文案', (WidgetTester tester) async {
+      await tester.pumpWidget(AutoChaoxingApp(state: signedInState()));
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      expect(find.textContaining('不代写作业'), findsNothing);
     });
 
     testWidgets('设置页断开连接后可以就地重连', (WidgetTester tester) async {
