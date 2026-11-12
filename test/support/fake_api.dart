@@ -1,5 +1,7 @@
 // 可注入的协议假实现：只返回预设数据，不发任何网络请求。
 // 供状态测试、Widget 测试与视觉取证共用，保证截图里的状态是确定的。
+import 'dart:async';
+
 import 'package:auto_chaoxing/core/chaoxing_api.dart';
 import 'package:auto_chaoxing/core/models.dart';
 
@@ -32,10 +34,25 @@ class FakeChaoxingApi extends ChaoxingApi {
   String? chaptersError;
   String? cardsErrorCode;
 
+  /// 视频总时长（秒）。默认 120，按 60 秒步长每个任务点上报 3 次。
+  int videoSeconds = 120;
+
+  /// 这些 objectId 对应的任务点永远判为未通过，用来覆盖失败分支。
+  final Set<String> neverPass = <String>{};
+
+  /// 设置后，第一次上报会挂起，测试可在运行中调用停止。
+  Completer<void>? reportGate;
+
+  /// 设为 true 时所有上报都返回登录失效；设为 >=0 时在 N 次上报后失效。
+  bool authExpiredOnReport = false;
+  int authExpiredAfterReports = -1;
+
   int loginCalls = 0;
   int coursesCalls = 0;
   int chaptersCalls = 0;
   int cardsCalls = 0;
+  int reportCalls = 0;
+  int statusCalls = 0;
 
   @override
   Future<Result<Profile>> login(String username, String password) async {
@@ -76,6 +93,10 @@ class FakeChaoxingApi extends ChaoxingApi {
     int page = 0,
   }) async {
     cardsCalls++;
+    if (cardsErrorCode == 'locked') {
+      // 与真实 API 的 locked 文案保持一致，避免假实现给出与线上不同的提示。
+      return const Err<ChapterCards>('locked', '章节未开放：上一章未完成或测验未提交');
+    }
     if (cardsErrorCode != null) {
       return Err<ChapterCards>(cardsErrorCode!, '卡片读取失败');
     }
@@ -87,6 +108,36 @@ class FakeChaoxingApi extends ChaoxingApi {
         points: points,
       ),
     );
+  }
+
+  @override
+  Future<Result<VideoStatus>> videoStatus(String objectId, String fid) async {
+    statusCalls++;
+    if (videoSeconds <= 0) return const Err<VideoStatus>('api', '视频时长异常');
+    return Ok<VideoStatus>(
+      VideoStatus(objectId: objectId, duration: videoSeconds, dtoken: 'dt-$objectId'),
+    );
+  }
+
+  @override
+  Future<Result<bool>> reportProgress({
+    required String reportUrl,
+    required String dtoken,
+    required TaskPoint point,
+    required String classId,
+    required String uid,
+    required int playTime,
+    required int duration,
+  }) async {
+    reportCalls++;
+    final Completer<void>? gate = reportGate;
+    if (gate != null && !gate.isCompleted) await gate.future;
+    if (authExpiredOnReport ||
+        (authExpiredAfterReports >= 0 && reportCalls > authExpiredAfterReports)) {
+      return const Err<bool>('authExpired', '登录已失效');
+    }
+    if (neverPass.contains(point.objectId)) return const Ok<bool>(false);
+    return Ok<bool>(playTime >= duration);
   }
 }
 

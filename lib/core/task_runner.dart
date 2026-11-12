@@ -8,11 +8,11 @@ import 'models.dart';
 enum TaskPhase { idle, preparing, running, succeeded, failed, needsAttention, stopped }
 
 class TaskLog {
-  TaskLog(this.message, {this.level = 'info'});
+  TaskLog(this.message, {this.level = 'info', DateTime? at}) : at = at ?? DateTime.now();
 
   final String message;
   final String level; // trace / info / warn / error
-  final DateTime at = DateTime.now();
+  final DateTime at;
 
   @override
   String toString() => '[$level] $message';
@@ -64,11 +64,20 @@ class VideoRunnerResult {
 }
 
 class TaskRunner {
-  TaskRunner(this.api, {this.onProgress, this.onLog});
+  TaskRunner(
+    this.api, {
+    this.onProgress,
+    this.onLog,
+    Future<void> Function(Duration)? sleep,
+  }) : _delay = sleep ?? _defaultDelay;
+
+  /// 默认用真实计时；测试注入零延时，避免用例等真实秒数。
+  static Future<void> _defaultDelay(Duration d) => Future<void>.delayed(d);
 
   final ChaoxingApi api;
   final void Function(TaskProgress)? onProgress;
   final void Function(TaskLog)? onLog;
+  final Future<void> Function(Duration) _delay;
 
   bool _stopRequested = false;
   TaskProgress _progress = const TaskProgress(phase: TaskPhase.idle);
@@ -104,14 +113,18 @@ class TaskRunner {
       cpi: course.cpi,
     );
     if (cards is Err<ChapterCards>) {
-      final TaskPhase phase =
-          cards.code == 'locked' ? TaskPhase.needsAttention : TaskPhase.failed;
-      _emit(TaskProgress(phase: phase, message: cards.message));
+      // 章节未开放和登录失效都需要人来处理，不能当作普通失败继续往下跑。
+      final bool manual = cards.code == 'locked' || cards.code == 'authExpired';
+      final TaskPhase phase = manual ? TaskPhase.needsAttention : TaskPhase.failed;
+      final String message = cards.code == 'authExpired'
+          ? '登录已失效，请重新连接账号后再继续'
+          : cards.message;
+      _emit(TaskProgress(phase: phase, message: message));
       return VideoRunnerResult(
         phase: phase,
         completed: completed,
         failed: failed,
-        message: cards.message,
+        message: message,
       );
     }
 
@@ -126,6 +139,7 @@ class TaskRunner {
         message: '本章没有视频任务点',
       );
     }
+    _log('开始处理「${chapter.title}」，共 ${videos.length} 个视频任务点');
 
     final String uid = data.userId.isNotEmpty
         ? data.userId
@@ -143,6 +157,7 @@ class TaskRunner {
       }
 
       final TaskPoint point = videos[i];
+      _log('开始：${point.name}');
       _emit(TaskProgress(
         phase: TaskPhase.running,
         current: point.name,
@@ -175,13 +190,39 @@ class TaskRunner {
           failed.add(point.name);
           _log('未通过：${point.name}（可能有人脸抽检或倍速限制）', level: 'warn');
         case Err<bool>():
-          if (r.code == 'needsAttention') {
-            _emit(TaskProgress(phase: TaskPhase.needsAttention, message: r.message));
+          // 用户主动停止不是失败，不要把任务点计进未通过。
+          if (r.code == 'stopped') {
+            _log('已停止：${point.name}（下次可从当前进度继续）', level: 'warn');
+            _emit(TaskProgress(
+              phase: TaskPhase.stopped,
+              done: i,
+              total: videos.length,
+              message: '已停止',
+            ));
+            return VideoRunnerResult(
+              phase: TaskPhase.stopped,
+              completed: completed,
+              failed: failed,
+              message: '已停止，可从断点继续',
+            );
+          }
+          // 人脸抽检、验证码、登录失效都不能重试，立即停下交回用户。
+          if (r.code == 'needsAttention' || r.code == 'authExpired') {
+            final String message = r.code == 'authExpired'
+                ? '登录已失效，请重新连接账号后再继续'
+                : r.message;
+            _log(message, level: 'error');
+            _emit(TaskProgress(
+              phase: TaskPhase.needsAttention,
+              done: i,
+              total: videos.length,
+              message: message,
+            ));
             return VideoRunnerResult(
               phase: TaskPhase.needsAttention,
               completed: completed,
               failed: failed,
-              message: r.message,
+              message: message,
             );
           }
           failed.add(point.name);
@@ -189,10 +230,15 @@ class TaskRunner {
       }
 
       // 任务点之间留间隔，单账号严格串行
-      await _sleep(const Duration(seconds: 2));
+      await _delay(const Duration(seconds: 2));
     }
 
     final bool allOk = failed.isEmpty;
+    _log(
+      '结束：完成 ${completed.length} / ${videos.length}'
+      '${failed.isEmpty ? '' : '，${failed.length} 个未通过'}',
+      level: allOk ? 'info' : 'warn',
+    );
     _emit(TaskProgress(
       phase: allOk ? TaskPhase.succeeded : TaskPhase.failed,
       done: videos.length,
@@ -237,20 +283,21 @@ class TaskRunner {
           return r;
         case Ok<bool>():
           errors = 0;
-          _log('${point.name}：已上报 ${last ? duration : playTime}s / ${duration}s');
+          _log(
+            '${point.name}：已上报 ${last ? duration : playTime}s / ${duration}s',
+            level: 'trace',
+          );
         case Err<bool>():
           if (r.code == 'authExpired') return r;
           errors++;
           if (errors >= 3) return Err<bool>(r.code, '连续 3 次上报失败：${r.message}');
-          await _sleep(const Duration(seconds: 3));
+          await _delay(const Duration(seconds: 3));
           continue;
       }
 
       if (last) return r; // 已到结尾仍未通过
       playTime += step;
-      await _sleep(const Duration(seconds: 1));
+      await _delay(const Duration(seconds: 1));
     }
   }
-
-  Future<void> _sleep(Duration d) => Future<void>.delayed(d);
 }
