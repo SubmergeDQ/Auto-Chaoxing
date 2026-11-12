@@ -118,7 +118,7 @@ void main() {
       await state.run.start(course: kDemoCourses.first, chapter: kDemoChapters.first);
       expect(state.run.logs, isNotEmpty);
 
-      state.signOut();
+      await state.signOut();
 
       expect(state.run.phase, TaskPhase.idle);
       expect(state.run.hasRun, isFalse);

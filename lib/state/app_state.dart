@@ -1,7 +1,10 @@
 // 应用状态：账号、课程、章节、任务点与各自的加载态。
 // 只做状态持有与编排，不拼 URL、不解析 HTML（那是 ChaoxingApi 的职责）。
 // 通过构造参数注入 api，便于纯 Dart / Widget 测试替换成假实现。
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/chaoxing_api.dart';
 import '../core/models.dart';
@@ -17,9 +20,11 @@ class AppState extends ChangeNotifier {
     ChaoxingApi? api,
     Future<void> Function(Duration)? sleep,
     RunKeeper? runKeeper,
+    Future<void> Function()? purgeSession,
   })  : api = api ?? ChaoxingApi(),
         _sleep = sleep,
-        runKeeper = runKeeper ?? createRunKeeper() {
+        runKeeper = runKeeper ?? createRunKeeper(),
+        _purgeSession = purgeSession {
     run = RunController(
       api: this.api,
       onChanged: _notify,
@@ -31,6 +36,10 @@ class AppState extends ChangeNotifier {
 
   final ChaoxingApi api;
   final Future<void> Function(Duration)? _sleep;
+
+  /// 断开连接时抹掉落盘的会话（cookie 文件）。
+  /// 由 main 注入 SessionJar.purge；测试里为 null，此时只清内存 cookie。
+  final Future<void> Function()? _purgeSession;
 
   /// 执行期间的后台保活。测试默认注入 Noop，真机是 Android 前台服务。
   final RunKeeper runKeeper;
@@ -61,6 +70,68 @@ class AppState extends ChangeNotifier {
   Profile? profile;
 
   bool get signedIn => profile != null;
+
+  /// 启动时正在校验本地会话。UI 据此显示「正在恢复登录」，
+  /// 而不是先闪一下「未连接」再自己跳回来。
+  bool restoringSession = false;
+
+  /// 启动时用落盘的 cookie 恢复登录态。
+  ///
+  /// 没有 `_uid` 直接返回，不联网——没登录过的设备不该在开屏时打一次学习通。
+  /// 校验失败（cookie 过期 / 被其他设备挤下线）静默回到未登录，不弹错误：
+  /// 用户此刻只是想打开应用，不是想听一次失败通知。
+  Future<void> bootstrap() async {
+    await _loadRememberedUsername();
+    await restoreSession();
+  }
+
+  /// 上次登录用过的手机号，用来预填登录框。
+  ///
+  /// 只记账号不记密码：手机号本身在设备上不算秘密，密码存盘没必要。
+  String lastUsername = '';
+
+  Future<void> _loadRememberedUsername() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? saved = prefs.getString(_kLastUsername);
+      if (saved != null && saved.isNotEmpty) {
+        lastUsername = saved;
+        _notify();
+      }
+    } catch (_) {
+      // 测试环境没有平台通道，读不到就当没记过。
+    }
+  }
+
+  Future<void> _rememberUsername(String username) async {
+    lastUsername = username;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kLastUsername, username);
+    } catch (_) {
+      // 记不住账号不影响登录本身。
+    }
+  }
+
+  static const String _kLastUsername = 'last_username';
+
+  Future<void> restoreSession() async {
+    if (restoringSession || signedIn) return;
+    if (!await api.hasSession()) return;
+    restoringSession = true;
+    _notify();
+    try {
+      final Result<Profile> r = await api.fetchProfile();
+      if (r is Ok<Profile>) {
+        profile = r.value;
+        _notify();
+        await loadCourses();
+      }
+    } finally {
+      restoringSession = false;
+      _notify();
+    }
+  }
 
   LoadState coursesState = LoadState.idle;
   List<Course> courses = <Course>[];
@@ -95,6 +166,7 @@ class AppState extends ChangeNotifier {
     }
     profile = (r as Ok<Profile>).value;
     _notify();
+    unawaited(_rememberUsername(username.trim()));
     await loadCourses();
     return null;
   }
@@ -179,12 +251,20 @@ class AppState extends ChangeNotifier {
     _notify();
   }
 
-  void signOut() {
+  /// 断开连接：内存状态先清空（界面立刻回到未登录），再抹掉落盘会话。
+  ///
+  /// 顺序不能反：等文件删完再刷新界面的话，弱网或文件被占用时
+  /// 用户会看到一个「点了没反应」的按钮。
+  Future<void> signOut() async {
     run.reset();
     profile = null;
     courses = <Course>[];
     coursesState = LoadState.idle;
     coursesError = null;
     clearSelection();
+    _notify();
+    await api.clearSession();
+    final Future<void> Function()? purge = _purgeSession;
+    if (purge != null) await purge();
   }
 }

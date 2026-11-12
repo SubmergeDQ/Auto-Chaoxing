@@ -46,9 +46,43 @@ class ChaoxingApi {
 
   Profile? profile;
 
+  /// 本地是否还有登录票据（不联网）。
+  ///
+  /// `_uid` 是学习通登录成功后一定会下发的 cookie，用它判断「值不值得再验一次」：
+  /// 没有就说明这台设备从没登录过或已主动断开，直接跳过启动时的联网校验。
+  Future<bool> hasSession() async {
+    try {
+      final List<Cookie> cs =
+          await cookieJar.loadForRequest(Uri.parse('https://chaoxing.com'));
+      return cs.any((Cookie c) => c.name == '_uid' && c.value.isNotEmpty);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 退出登录：清掉全部 cookie。落盘清理由调用方（SessionJar）负责。
+  Future<void> clearSession() async {
+    profile = null;
+    try {
+      await cookieJar.deleteAll();
+    } catch (_) {
+      // 清不掉就等过期，不影响当前会话。
+    }
+  }
+
   /// 登录：账号密码先本地 AES-CBC 加密，再提交。
   Future<Result<Profile>> login(String username, String password) async {
     try {
+      // 先取一次登录页：passport 会下发 JSESSIONID / route，
+      // 直接 POST 到 fanyalogin 在部分线路会被判成非法请求。
+      try {
+        await _dio.get<String>(
+          'https://passport2.chaoxing.com/login',
+          queryParameters: <String, dynamic>{'fid': '', 'refer': 'https://i.chaoxing.com'},
+        );
+      } on DioException {
+        // 预请求失败不致命：POST 带上 Origin/Referer 通常也能过。
+      }
       final Response<String> resp = await _dio.post<String>(
         'https://passport2.chaoxing.com/fanyalogin',
         data: <String, dynamic>{
@@ -60,7 +94,14 @@ class ChaoxingApi {
           'uname': aesCbcBase64(username.trim()),
           'password': aesCbcBase64(password),
         },
-        options: Options(contentType: Headers.formUrlEncodedContentType),
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          headers: <String, dynamic>{
+            'Origin': 'https://passport2.chaoxing.com',
+            'Referer':
+                'https://passport2.chaoxing.com/login?fid=&refer=https%3A%2F%2Fi.chaoxing.com',
+          },
+        ),
       );
       final Map<String, dynamic>? json = _tryJson(resp.data);
       if (json == null) {
@@ -73,12 +114,13 @@ class ChaoxingApi {
       final String msg = '${json['msg2'] ?? json['mes'] ?? json['msg'] ?? '登录失败'}';
       if (json['needVcode'] == true ||
           json['containTwoFactorLogin'] == true ||
-          json['weakpwd'] == true) {
+          json['weakpwd'] == true ||
+          json['passwordTimeout'] == true) {
         return Err<Profile>('needsAttention', msg.isEmpty ? '需要验证码或二次验证' : msg);
       }
       return Err<Profile>('api', msg);
     } on DioException catch (e) {
-      return Err<Profile>('network', e.message ?? '网络错误');
+      return Err<Profile>('network', _netMessage(e));
     }
   }
 
@@ -99,7 +141,7 @@ class ChaoxingApi {
       profile = p;
       return Ok<Profile>(p);
     } on DioException catch (e) {
-      return Err<Profile>('network', e.message ?? '网络错误');
+      return Err<Profile>('network', _netMessage(e));
     }
   }
 
@@ -143,7 +185,7 @@ class ChaoxingApi {
       }
       return Ok<List<Course>>(out);
     } on DioException catch (e) {
-      return Err<List<Course>>('network', e.message ?? '网络错误');
+      return Err<List<Course>>('network', _netMessage(e));
     }
   }
 
@@ -195,7 +237,7 @@ class ChaoxingApi {
       }
       return Ok<List<Chapter>>(out);
     } on DioException catch (e) {
-      return Err<List<Chapter>>('network', e.message ?? '网络错误');
+      return Err<List<Chapter>>('network', _netMessage(e));
     }
   }
 
@@ -266,7 +308,7 @@ class ChaoxingApi {
         ),
       );
     } on DioException catch (e) {
-      return Err<ChapterCards>('network', e.message ?? '网络错误');
+      return Err<ChapterCards>('network', _netMessage(e));
     }
   }
 
@@ -299,7 +341,7 @@ class ChaoxingApi {
         ),
       );
     } on DioException catch (e) {
-      return Err<VideoStatus>('network', e.message ?? '网络错误');
+      return Err<VideoStatus>('network', _netMessage(e));
     }
   }
 
@@ -355,11 +397,35 @@ class ChaoxingApi {
       if (json == null) return const Err<bool>('parse', '进度响应无法解析');
       return Ok<bool>(json['isPassed'] == true);
     } on DioException catch (e) {
-      return Err<bool>('network', e.message ?? '网络错误');
+      return Err<bool>('network', _netMessage(e));
     }
   }
 
   // ---------------------------------------------------------------- 工具
+
+  /// 把 Dio 的异常翻成人能读的中文。
+  ///
+  /// 直接展示 e.message 时用户会看到 `SocketException: Connection refused` 这类串，
+  /// 既不知道是自己网络的问题还是软件坏了，也不知道下一步该做什么。
+  static String _netMessage(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
+        return '网络超时，请检查网络后重试';
+      case DioExceptionType.connectionError:
+        return '连不上学习通服务器，请检查网络或代理设置';
+      case DioExceptionType.badCertificate:
+        return '证书校验失败，当前网络可能需要登录门户';
+      case DioExceptionType.cancel:
+        return '请求已取消';
+      case DioExceptionType.badResponse:
+        return '服务器返回异常（${e.response?.statusCode}）';
+      case DioExceptionType.unknown:
+        return e.message ?? '网络错误';
+    }
+  }
 
   bool _looksLikeLogin(String body) =>
       _authExpiredMarkers.any((String m) => body.contains(m));

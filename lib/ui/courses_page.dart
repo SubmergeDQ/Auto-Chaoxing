@@ -100,6 +100,19 @@ class _CourseListPane extends StatelessWidget {
 
   Widget _content(BuildContext context) {
     if (!state.signedIn) {
+      // 落盘会话正在校验：不要再闪一次「先连接账号」，否则用户会以为掉线了。
+      if (state.restoringSession) {
+        return const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
+              SizedBox(height: AcxSpacing.lg),
+              Text('正在恢复上次的登录…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
+            ],
+          ),
+        );
+      }
       return AcxEmptyState(
         icon: Icons.lock_outline_rounded,
         title: '先连接你的学习通账号',
@@ -322,7 +335,8 @@ class LoginDialog extends StatefulWidget {
 }
 
 class _LoginDialogState extends State<LoginDialog> {
-  final TextEditingController _username = TextEditingController();
+  late final TextEditingController _username =
+      TextEditingController(text: widget.state.lastUsername);
   final TextEditingController _password = TextEditingController();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
 

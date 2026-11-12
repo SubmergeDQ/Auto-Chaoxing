@@ -449,7 +449,7 @@ class SettingsPage extends StatelessWidget {
                 // 断开后留在设置页也要能就地重连，不必自己想到切回工作台。
                 if (state.signedIn)
                   OutlinedButton(
-                    onPressed: state.signOut,
+                    onPressed: () => unawaited(state.signOut()),
                     child: const Text('断开连接'),
                   )
                 else

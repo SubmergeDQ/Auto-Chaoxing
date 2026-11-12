@@ -119,7 +119,7 @@ void main() {
       await state.signIn('13800000000', 'secret');
       await state.selectCourse(kDemoCourses.first);
 
-      state.signOut();
+      await state.signOut();
 
       expect(state.signedIn, isFalse);
       expect(state.courses, isEmpty);

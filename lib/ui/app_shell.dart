@@ -1,5 +1,7 @@
 // 自适应外壳：宽屏用固定侧栏 + 单行顶栏，窄屏用底栏导航。
 // 导航按范围分层：三个 Tab 是同一账号下的同级视图，课程内部的章节下钻由页面自己负责。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
@@ -20,6 +22,16 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 上一轮登录的 cookie 已经落盘，开机就在后台验一次；
+    // 放首帧之后，避免把「恢复会话」的网络等待塞进开屏。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(widget.state.bootstrap());
+    });
+  }
 
   static const List<String> _titles = <String>['课程工作台', '任务执行', '协议自检', '设置'];
   static const List<String> _subtitles = <String>[

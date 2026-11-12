@@ -20,13 +20,6 @@ String _cut(String? s, [int n = 600]) {
   return one.length <= n ? one : '${one.substring(0, n)}…(${one.length} chars)';
 }
 
-void _cookies(CookieJar jar, String tag) {
-  jar.loadForRequest(Uri.parse('https://chaoxing.com')).then((List<Cookie> cs) {
-    stdout.writeln('  [$tag] cookies(${cs.length}): '
-        '${cs.map((Cookie c) => '${c.name}=${c.value.length > 12 ? '${c.value.substring(0, 12)}…' : c.value}').join('; ')}');
-  });
-}
-
 Future<void> main(List<String> args) async {
   if (args.length < 2) {
     stderr.writeln('用法: dart run tool/login_probe.dart <账号> <密码>');
