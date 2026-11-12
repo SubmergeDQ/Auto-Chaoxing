@@ -66,7 +66,10 @@ class _CourseListPane extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           _MetricsRow(state: state, open: wide),
-          if (wide)
+          if (wide &&
+              state.signedIn &&
+              state.coursesState == LoadState.ready &&
+              state.courses.isNotEmpty)
             const Padding(
               padding: EdgeInsets.only(top: AcxSpacing.md),
               child: Text(
@@ -101,9 +104,13 @@ class _CourseListPane extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              AcxStatusBadge(label: '读取中', status: AcxStatus.running),
+              SizedBox(height: AcxSpacing.xl),
               SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
               SizedBox(height: AcxSpacing.lg),
               Text('正在读取课程列表…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
+              SizedBox(height: AcxSpacing.xs),
+              Text('完成后会自动显示课程', style: TextStyle(fontSize: 12, color: AcxColors.textTertiary)),
             ],
           ),
         );

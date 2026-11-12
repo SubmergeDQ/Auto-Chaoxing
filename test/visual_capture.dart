@@ -1,4 +1,4 @@
-// 视觉取证工具：用 Flutter 真实渲染导出标准视口与交互状态 PNG。
+// 视觉取证工具：用 Flutter 真实渲染导出标准视口、交互态与异常态 PNG。
 // 文件名不以 _test.dart 结尾，不会被 CI 的 `flutter test` 自动收集；显式运行：
 //   flutter test test/visual_capture.dart --update-goldens
 // 产物写入 test/goldens/（过程文件，不入库），数据来自 test/support/fake_api.dart。
@@ -17,6 +17,13 @@ import 'support/fake_api.dart';
 
 const String _cnFontFamily = 'AcxCjk';
 
+const Profile kDemoProfile = Profile(
+  uid: '10086',
+  name: '林知远',
+  fid: '666',
+  school: '示例大学',
+);
+
 void main() {
   testWidgets('capture standard viewports', (WidgetTester tester) async {
     String? family;
@@ -24,7 +31,7 @@ void main() {
       family = await loadTestFonts();
     });
 
-    // 桌面：常态、空态、登录表单、自检、设置、断开连接后
+    // 桌面：常态、空态、登录表单、登录失败、自检、设置、断开连接后
     await capture(
       tester: tester,
       name: 'desktop-courses',
@@ -50,6 +57,14 @@ void main() {
     );
     await capture(
       tester: tester,
+      name: 'desktop-login-error',
+      size: const Size(1440, 900),
+      state: AppState(api: FakeChaoxingApi(loginError: '密码错误，请检查后重试')),
+      fontFamily: family,
+      fillLoginAndSubmit: true,
+    );
+    await capture(
+      tester: tester,
       name: 'desktop-selfcheck',
       size: const Size(1440, 900),
       state: signedInState(),
@@ -72,6 +87,52 @@ void main() {
       fontFamily: family,
       page: 2,
       tapDisconnect: true,
+    );
+
+    // 桌面：加载 / 失败 / 需要人工 三类异常态
+    await capture(
+      tester: tester,
+      name: 'desktop-loading',
+      size: const Size(1440, 900),
+      state: coursesState(LoadState.loading),
+      fontFamily: family,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-error',
+      size: const Size(1440, 900),
+      state: coursesState(
+        LoadState.error,
+        message: '连接超时。请检查网络后重试，或稍后再打开课程列表。',
+      ),
+      fontFamily: family,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-chapters-loading',
+      size: const Size(1440, 900),
+      state: signedInState()
+        ..chaptersState = LoadState.loading
+        ..chapters = <Chapter>[],
+      fontFamily: family,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-chapters-error',
+      size: const Size(1440, 900),
+      state: signedInState()
+        ..chaptersState = LoadState.error
+        ..chapters = <Chapter>[]
+        ..chaptersError = '章节页面解析失败，可能是课程页面结构发生了变化。',
+      fontFamily: family,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-chapter-locked',
+      size: const Size(1440, 900),
+      state: signedInState(cardsErrorCode: 'locked'),
+      fontFamily: family,
+      expandFirstChapter: true,
     );
 
     // 移动端：课程列表、章节下钻、自检、设置、空态
@@ -152,20 +213,24 @@ Future<String?> loadTestFonts() async {
   return family;
 }
 
-AppState signedInState() {
+AppState coursesState(LoadState state, {String? message}) {
+  final AppState s = AppState(api: FakeChaoxingApi());
+  s.profile = kDemoProfile;
+  s.coursesState = state;
+  s.coursesError = message;
+  return s;
+}
+
+AppState signedInState({String? cardsErrorCode}) {
   final AppState state = AppState(
     api: FakeChaoxingApi(
       courses: kDemoCourses,
       chapters: kDemoChapters,
       points: kDemoPoints,
+      cardsErrorCode: cardsErrorCode,
     ),
   );
-  state.profile = const Profile(
-    uid: '10086',
-    name: '林知远',
-    fid: '666',
-    school: '示例大学',
-  );
+  state.profile = kDemoProfile;
   state.coursesState = LoadState.ready;
   state.courses = kDemoCourses;
   state.selectedCourse = kDemoCourses.first;
@@ -184,6 +249,7 @@ Future<void> capture({
   bool expandFirstChapter = false,
   bool openCourse = false,
   bool showLoginDialog = false,
+  bool fillLoginAndSubmit = false,
   bool tapDisconnect = false,
 }) async {
   tester.view.physicalSize = size;
@@ -205,12 +271,26 @@ Future<void> capture({
   );
   await tester.pump(const Duration(milliseconds: 300));
 
-  if (showLoginDialog) {
+  if (showLoginDialog || fillLoginAndSubmit) {
     final Finder login = find.text('连接账号');
     if (login.evaluate().isNotEmpty) {
       await tester.tap(login.first);
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
+  if (fillLoginAndSubmit) {
+    final Finder fields = find.byType(TextFormField);
+    if (fields.evaluate().length >= 2) {
+      await tester.enterText(fields.at(0), '13800000000');
+      await tester.enterText(fields.at(1), 'wrong-password');
+      await tester.pump(const Duration(milliseconds: 100));
+      final Finder submit = find.text('连接');
+      if (submit.evaluate().isNotEmpty) {
+        await tester.tap(submit.first);
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
     }
   }
   if (page == 1) {

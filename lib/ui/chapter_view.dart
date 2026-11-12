@@ -18,19 +18,15 @@ class ChapterPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final Course? course = state.selectedCourse;
     if (course == null) {
-      // 未登录时只留一句安静的提示，避免和左侧的「连接账号」形成第二个等权重心。
-      if (!state.signedIn) {
-        return const Center(
-          child: Padding(
-            padding: EdgeInsets.all(AcxSpacing.xxl),
-            child: Text(
-              '连接账号后，这里会显示课程的章节与任务点。',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AcxColors.textTertiary),
-            ),
-          ),
-        );
-      }
+      // 课程还没就绪时右栏保持安静，不给「从左侧选择一门课程」这种当前做不到的指引。
+      final String? quiet = !state.signedIn
+          ? '连接账号后，这里会显示课程的章节与任务点。'
+          : state.coursesState == LoadState.loading
+              ? '课程列表读取中，完成后这里会显示章节与任务点。'
+              : state.coursesState == LoadState.error
+                  ? '课程列表还没准备好，重试成功后这里会显示章节与任务点。'
+                  : null;
+      if (quiet != null) return _quietHint(quiet);
       return const AcxEmptyState(
         icon: Icons.account_tree_outlined,
         title: '从左侧选择一门课程',
@@ -39,6 +35,20 @@ class ChapterPane extends StatelessWidget {
     }
     return _ChapterContent(state: state, course: course);
   }
+}
+
+/// 安静的单行提示：用于还没到「可以选择课程」这一步的状态，不抢主区的主角。
+Widget _quietHint(String text) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(AcxSpacing.xxl),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 13, color: AcxColors.textTertiary),
+      ),
+    ),
+  );
 }
 
 class ChapterDetailPage extends StatelessWidget {
@@ -128,9 +138,13 @@ class _ChapterContent extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              AcxStatusBadge(label: '读取中', status: AcxStatus.running),
+              SizedBox(height: AcxSpacing.xl),
               SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
               SizedBox(height: AcxSpacing.lg),
               Text('正在读取章节…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
+              SizedBox(height: AcxSpacing.xs),
+              Text('完成后会自动列出章节', style: TextStyle(fontSize: 12, color: AcxColors.textTertiary)),
             ],
           ),
         );
@@ -319,15 +333,33 @@ class _PointsView extends StatelessWidget {
           color: AcxColors.warningSoft,
           borderRadius: BorderRadius.circular(AcxRadius.sm),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(Icons.info_outline_rounded, size: 16, color: AcxColors.warning),
-            const SizedBox(width: AcxSpacing.sm),
-            Expanded(
-              child: Text(
-                error,
-                style: const TextStyle(fontSize: 12, height: 1.5, color: AcxColors.warning),
-              ),
+            const Row(
+              children: <Widget>[
+                Icon(Icons.front_hand_outlined, size: 16, color: AcxColors.warning),
+                SizedBox(width: AcxSpacing.sm),
+                Text(
+                  '需要人工处理',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AcxColors.warning,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AcxSpacing.sm),
+            Text(
+              error,
+              style: const TextStyle(fontSize: 12, height: 1.5, color: AcxColors.warning),
+            ),
+            const SizedBox(height: AcxSpacing.sm),
+            const Text(
+              '已停止，不会自动重试。完成前置条件后再展开本章。',
+              style: TextStyle(fontSize: 12, height: 1.5, color: AcxColors.textSecondary),
             ),
           ],
         ),
