@@ -280,30 +280,25 @@ class _ProgressRow extends StatelessWidget {
             valueColor: const AlwaysStoppedAnimation<Color>(AcxColors.brand),
           ),
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: <Widget>[
-            Text(
-              known ? '已完成 $done / $total' : '正在读取任务点',
-              style: const TextStyle(
-                fontSize: 11,
-                color: AcxColors.textTertiary,
-                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
-              ),
-            ),
-            if (current.isNotEmpty) ...<Widget>[
-              const SizedBox(width: AcxSpacing.md),
-              Expanded(
-                child: Text(
-                  current,
-                  maxLines: 1,
-                  textAlign: TextAlign.right,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: AcxColors.textTertiary),
+        const SizedBox(height: 8),
+        Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: known ? '已完成 $done / $total' : '正在读取任务点'),
+              if (current.isNotEmpty)
+                TextSpan(
+                  text: ' · 正在上报 $current',
+                  style: const TextStyle(color: AcxColors.textSecondary),
                 ),
-              ),
             ],
-          ],
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 12,
+            color: AcxColors.textTertiary,
+            fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+          ),
         ),
       ],
     );
@@ -399,13 +394,14 @@ class _LogLine extends StatelessWidget {
     final bool warn = log.level == 'warn';
     final bool error = log.level == 'error';
     final bool trace = log.level == 'trace';
+    // 日志是长段阅读，正文字号配足够的对比度：info 用主文字色，trace 低一档但不过浅。
     final Color color = error
         ? AcxColors.danger
         : warn
             ? AcxColors.warning
             : trace
-                ? AcxColors.textTertiary
-                : AcxColors.textSecondary;
+                ? AcxColors.textSecondary
+                : AcxColors.textPrimary;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AcxSpacing.md, vertical: 5),

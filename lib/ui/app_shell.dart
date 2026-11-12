@@ -55,8 +55,8 @@ class _AppShellState extends State<AppShell> {
       builder: (BuildContext context, Widget? _) {
         final bool running = widget.state.run.busy;
         final List<Widget> actions = <Widget>[
-          // 全局运行信号：切到自检或设置页时也知道后台还在跑。
-          if (wide && running)
+          // 全局运行信号：切到自检或设置页时也知道后台还在跑；已在执行页就不重复一遍。
+          if (wide && running && _index != 1)
             const Padding(
               padding: EdgeInsets.only(right: AcxSpacing.sm),
               child: AcxStatusBadge(label: '运行中', status: AcxStatus.running),

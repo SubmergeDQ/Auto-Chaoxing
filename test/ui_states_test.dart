@@ -156,8 +156,8 @@ void main() {
       await tester.pump();
 
       expect(find.text('运行中'), findsOneWidget);
-      expect(find.text('已完成 1 / 3'), findsOneWidget);
-      expect(find.text('1.2 数列的极限'), findsOneWidget);
+      expect(find.textContaining('已完成 1 / 3'), findsOneWidget);
+      expect(find.textContaining('正在上报 1.2 数列的极限'), findsOneWidget);
       expect(find.text('停止执行'), findsOneWidget);
       expect(find.text('完成：1.1 映射与函数'), findsOneWidget);
     });
