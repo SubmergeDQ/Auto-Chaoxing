@@ -458,7 +458,44 @@ class _RunFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<TaskPoint> videos = points.where((TaskPoint p) => p.isVideo).toList();
-    if (videos.isEmpty) return const SizedBox.shrink();
+    if (videos.isEmpty) {
+      if (points.isEmpty) return const SizedBox.shrink();
+      // 有任务点但没有视频：不要静默留白，否则用户会以为客户端漏读了任务，
+      // 或者反复点章节找那个「执行」按钮。
+      final Map<String, int> byType = <String, int>{};
+      for (final TaskPoint p in points) {
+        final String label = _typeLabel(p.type);
+        byType[label] = (byType[label] ?? 0) + 1;
+      }
+      final String detail =
+          byType.entries.map((MapEntry<String, int> e) => '${e.value} 个${e.key}').join('、');
+      return Padding(
+        padding: const EdgeInsets.only(top: AcxSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Divider(height: 1),
+            const SizedBox(height: AcxSpacing.md),
+            Row(
+              children: <Widget>[
+                const Icon(Icons.info_outline_rounded, size: 16, color: AcxColors.textTertiary),
+                const SizedBox(width: AcxSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '本章 $detail 任务点，都不在本客户端的自动执行范围内，需要在手机端完成。',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.6,
+                      color: AcxColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
 
     final bool archived = state.selectedCourse?.archived ?? false;
     final bool busy = state.run.busy;
@@ -481,7 +518,11 @@ class _RunFooter extends StatelessWidget {
         if (resumeCount > 0) '$resumeCount 个从中间继续',
         if (passedCount == 0 && resumeCount == 0) '耗时与视频总长相近',
       ];
-      hint = '${videos.length} 个视频任务点 · ${notes.join('，')}';
+      // 混排章节里视频只占一部分，剩下的文档/作业不会被执行；
+      // 不写出来用户会以为点一次就把整章做完了。
+      final int others = points.length - videos.length;
+      hint = '${videos.length} 个视频任务点 · ${notes.join('，')}'
+          '${others > 0 ? '；另有 $others 个非视频任务点需在手机端完成' : ''}';
     }
 
     return Padding(

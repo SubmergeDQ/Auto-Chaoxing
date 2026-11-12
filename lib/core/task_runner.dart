@@ -145,12 +145,18 @@ class TaskRunner {
     final ChapterCards data = (cards as Ok<ChapterCards>).value;
     final List<TaskPoint> videos = data.points.where((TaskPoint p) => p.isVideo).toList();
     if (videos.isEmpty) {
-      _emit(const TaskProgress(phase: TaskPhase.succeeded, message: '本章没有视频任务点'));
+      // 「没有视频」和「没有任务」是两件事：只有文档/作业/测验的章节如果也回
+      // 「没有视频任务点」，用户会以为读错了数据，其实是这些类型本就不在本客户端范围内。
+      final String message = data.points.isEmpty
+          ? '本章没有任务点'
+          : '本章 ${data.points.length} 个任务点都不是视频（文档/作业/测验），需要在手机端完成';
+      _log(message);
+      _emit(TaskProgress(phase: TaskPhase.succeeded, message: message));
       return VideoRunnerResult(
         phase: TaskPhase.succeeded,
         completed: completed,
         failed: failed,
-        message: '本章没有视频任务点',
+        message: message,
       );
     }
     _log('开始处理「${chapter.title}」，共 ${videos.length} 个视频任务点');

@@ -78,6 +78,24 @@ void main() {
       fontFamily: family,
       page: 2,
     );
+    // Windows 默认窗口是 1280x820（见 windows/runner/main.cpp），
+    // 单独拍一张确认这个尺寸下侧栏 + 主从双栏都成立。
+    await capture(
+      tester: tester,
+      name: 'win-1280-courses',
+      size: const Size(1280, 820),
+      state: signedInState(),
+      fontFamily: family,
+      expandFirstChapter: true,
+    );
+    await capture(
+      tester: tester,
+      name: 'win-1280-settings',
+      size: const Size(1280, 820),
+      state: signedInState(),
+      fontFamily: family,
+      page: 3,
+    );
     // 自检卡的三种状态：计时中、计时连续、计时被押后。
     await capture(
       tester: tester,
@@ -523,11 +541,16 @@ Future<void> capture({
     }
   }
   if (page == 2) {
-    // 侧栏叫「协议自检」，窄屏底栏叫「自检」。
-    final Finder nav = find.text(wide ? '协议自检' : '自检');
+    // 自检已降为设置的二级页：先切设置，再点入口。
+    final Finder nav = find.text('设置');
     if (nav.evaluate().isNotEmpty) {
       await tester.tap(nav.first);
       await tester.pump(const Duration(milliseconds: 600));
+      final Finder entry = find.text('协议自检');
+      if (entry.evaluate().isNotEmpty) {
+        await tester.tap(entry.first);
+        await tester.pump(const Duration(milliseconds: 600));
+      }
     }
   }
   if (page == 3) {

@@ -276,7 +276,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('执行本章视频'), findsOneWidget);
-      expect(find.text('2 个视频任务点 · 耗时与视频总长相近'), findsOneWidget);
+      expect(find.textContaining('2 个视频任务点 · 耗时与视频总长相近'), findsOneWidget);
+      // 混排章节要说清非视频任务点不归本客户端管，否则用户以为一键做完。
+      expect(find.textContaining('另有 2 个非视频任务点'), findsOneWidget);
 
       final Finder runButton = find.text('执行本章视频');
       await tester.ensureVisible(runButton);
@@ -324,7 +326,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(
-        find.text('2 个视频任务点 · 1 个平台已通过将跳过，1 个从中间继续'),
+        find.textContaining('2 个视频任务点 · 1 个平台已通过将跳过，1 个从中间继续'),
         findsOneWidget,
         reason: '任务点没动时用户要能查到这里说了会跳过',
       );

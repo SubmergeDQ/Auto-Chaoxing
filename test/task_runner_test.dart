@@ -151,8 +151,23 @@ void main() {
       );
 
       expect(r.phase, TaskPhase.succeeded);
-      expect(r.message, '本章没有视频任务点');
+      // 有任务点但不是视频：不能说「没有任务点」，那是另一回事。
+      expect(r.message, contains('都不是视频'));
+      expect(r.message, contains('2 个任务点'));
       expect(api.statusCalls, 0);
+    });
+
+    test('章节真的没有任务点时，文案与「只有非视频任务点」区分开', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: const <TaskPoint>[]);
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
+
+      final VideoRunnerResult r = await runner.runChapterVideos(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(r.message, '本章没有任务点');
     });
 
     test('平台已标记通过的任务点整段跳过，不发起任何上报', () async {
