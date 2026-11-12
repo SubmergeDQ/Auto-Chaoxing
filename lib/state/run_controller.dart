@@ -137,11 +137,15 @@ class RunController {
     required String chapterTitle,
     required TaskProgress progress,
     List<TaskLog> logs = const <TaskLog>[],
+    Course? course,
+    Chapter? chapter,
     DateTime? startedAt,
     DateTime? finishedAt,
   }) {
     _session++;
     _runner = null;
+    _lastCourse = course;
+    _lastChapter = chapter;
     this.courseName = courseName;
     this.chapterTitle = chapterTitle;
     this.progress = progress;

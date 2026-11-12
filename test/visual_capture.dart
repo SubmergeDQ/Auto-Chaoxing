@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:auto_chaoxing/core/models.dart';
+import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/main.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:flutter/material.dart';
@@ -69,7 +70,7 @@ void main() {
       size: const Size(1440, 900),
       state: signedInState(),
       fontFamily: family,
-      page: 1,
+      page: 2,
     );
     await capture(
       tester: tester,
@@ -77,7 +78,7 @@ void main() {
       size: const Size(1440, 900),
       state: signedInState(),
       fontFamily: family,
-      page: 2,
+      page: 3,
     );
     await capture(
       tester: tester,
@@ -85,7 +86,7 @@ void main() {
       size: const Size(1440, 900),
       state: signedInState(),
       fontFamily: family,
-      page: 2,
+      page: 3,
       tapDisconnect: true,
     );
 
@@ -134,8 +135,44 @@ void main() {
       fontFamily: family,
       expandFirstChapter: true,
     );
+    // 执行前的确认框：说明处理范围与「遇到人工验证会停下」。
+    await capture(
+      tester: tester,
+      name: 'desktop-run-confirm',
+      size: const Size(1440, 900),
+      state: signedInState(),
+      fontFamily: family,
+      expandFirstChapter: true,
+      tapRun: true,
+    );
 
-    // 移动端：课程列表、章节下钻、自检、设置、空态
+    // 桌面：任务执行页的空态 / 运行中 / 已完成
+    await capture(
+      tester: tester,
+      name: 'desktop-run-idle',
+      size: const Size(1440, 900),
+      state: signedInState(),
+      fontFamily: family,
+      page: 1,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-run-running',
+      size: const Size(1440, 900),
+      state: runState(phase: TaskPhase.running),
+      fontFamily: family,
+      page: 1,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-run-done',
+      size: const Size(1440, 900),
+      state: runState(phase: TaskPhase.succeeded),
+      fontFamily: family,
+      page: 1,
+    );
+
+    // 移动端：课程列表、章节下钻、自检、设置、空态、执行中
     await capture(
       tester: tester,
       name: 'mobile-courses',
@@ -162,11 +199,19 @@ void main() {
     );
     await capture(
       tester: tester,
+      name: 'mobile-run-running',
+      size: const Size(390, 844),
+      state: runState(phase: TaskPhase.running),
+      fontFamily: family,
+      page: 1,
+    );
+    await capture(
+      tester: tester,
       name: 'mobile-selfcheck',
       size: const Size(390, 844),
       state: signedInState(),
       fontFamily: family,
-      page: 1,
+      page: 2,
     );
     await capture(
       tester: tester,
@@ -174,7 +219,7 @@ void main() {
       size: const Size(390, 844),
       state: signedInState(),
       fontFamily: family,
-      page: 2,
+      page: 3,
     );
     await capture(
       tester: tester,
@@ -248,6 +293,44 @@ AppState signedInState({String? cardsErrorCode}) {
   return state;
 }
 
+/// 注入一次执行快照，让执行页有确定的进度与日志可渲染，不发任何请求。
+AppState runState({required TaskPhase phase}) {
+  final AppState state = signedInState();
+  final bool done = phase == TaskPhase.succeeded;
+  final DateTime start = DateTime(2026, 11, 12, 19, 40, 8);
+
+  state.run.seedForPreview(
+    courseName: '高等数学（上）',
+    chapterTitle: '第一章 函数与极限',
+    course: kDemoCourses.first,
+    chapter: kDemoChapters.first,
+    startedAt: start,
+    finishedAt: done ? DateTime(2026, 11, 12, 19, 44, 31) : null,
+    progress: TaskProgress(
+      phase: phase,
+      current: done ? '' : '1.2 数列的极限',
+      done: done ? 2 : 1,
+      total: 2,
+      message: done ? '完成 2 / 2' : '',
+    ),
+    logs: <TaskLog>[
+      TaskLog('开始处理「第一章 函数与极限」，共 2 个视频任务点', at: start),
+      TaskLog('开始：1.1 映射与函数', at: start.add(const Duration(seconds: 2))),
+      TaskLog('1.1 映射与函数：已上报 0s / 600s', level: 'trace', at: start.add(const Duration(seconds: 4))),
+      TaskLog('1.1 映射与函数：已上报 300s / 600s', level: 'trace', at: start.add(const Duration(minutes: 2))),
+      TaskLog('完成：1.1 映射与函数', at: start.add(const Duration(minutes: 3, seconds: 12))),
+      TaskLog('开始：1.2 数列的极限', at: start.add(const Duration(minutes: 3, seconds: 14))),
+      TaskLog('1.2 数列的极限：已上报 60s / 600s', level: 'trace',
+          at: start.add(const Duration(minutes: 3, seconds: 19))),
+      if (done) ...<TaskLog>[
+        TaskLog('完成：1.2 数列的极限', at: start.add(const Duration(minutes: 4, seconds: 20))),
+        TaskLog('结束：完成 2 / 2', at: start.add(const Duration(minutes: 4, seconds: 23))),
+      ],
+    ],
+  );
+  return state;
+}
+
 Future<void> capture({
   required WidgetTester tester,
   required String name,
@@ -260,6 +343,7 @@ Future<void> capture({
   bool showLoginDialog = false,
   bool fillLoginAndSubmit = false,
   bool tapDisconnect = false,
+  bool tapRun = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -303,6 +387,14 @@ Future<void> capture({
     }
   }
   if (page == 1) {
+    // 侧栏叫「任务执行」，窄屏底栏叫「执行」。
+    final Finder nav = find.text(wide ? '任务执行' : '执行');
+    if (nav.evaluate().isNotEmpty) {
+      await tester.tap(nav.first);
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
+  if (page == 2) {
     // 侧栏叫「协议自检」，窄屏底栏叫「自检」。
     final Finder nav = find.text(wide ? '协议自检' : '自检');
     if (nav.evaluate().isNotEmpty) {
@@ -310,7 +402,7 @@ Future<void> capture({
       await tester.pump(const Duration(milliseconds: 300));
     }
   }
-  if (page == 2) {
+  if (page == 3) {
     final Finder nav = find.text('设置');
     if (nav.evaluate().isNotEmpty) {
       await tester.tap(nav.first);
@@ -339,6 +431,16 @@ Future<void> capture({
     final Finder chapter = find.text('第一章 函数与极限');
     if (chapter.evaluate().isNotEmpty) {
       await tester.tap(chapter.first);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
+  if (tapRun) {
+    final Finder run = find.text('执行本章视频');
+    if (run.evaluate().isNotEmpty) {
+      await tester.ensureVisible(run.first);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(run.first);
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
     }
