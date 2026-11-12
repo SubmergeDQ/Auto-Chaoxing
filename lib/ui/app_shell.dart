@@ -23,8 +23,8 @@ class _AppShellState extends State<AppShell> {
   static const List<String> _titles = <String>['课程工作台', '协议自检', '设置'];
   static const List<String> _subtitles = <String>[
     '课程、章节与任务点',
-    '签名与加密固定向量',
-    '运行约束与节流策略',
+    '两个本地算法的正确性检查',
+    '运行方式与隐私保护',
   ];
 
   void _select(int index) {

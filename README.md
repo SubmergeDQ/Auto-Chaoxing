@@ -119,6 +119,7 @@ docs/
   03-协议与接口.md
   04-难点与注意事项.md
   05-Flutter双端可行性评估.md
+DESIGN.md                   # 界面设计规范（方向、语义角色、组件、禁忌）
 core/                       # 纯 Python 协议验证脚本（不含 App 依赖）
 test/
   crypto_test.dart          # 签名与加密固定向量
@@ -133,7 +134,8 @@ test/
 ## 验证与视觉取证
 
 `test/visual_capture.dart` 用 Flutter 真实渲染导出 `1440×900` 桌面与 `390×844` 移动端标准视口截图，
-覆盖课程工作台、未登录空态、协议自检、设置页、移动端章节下钻：
+共 18 张，覆盖课程工作台、未登录空态、协议自检、设置页、移动端章节列表与展开态，
+以及登录 / 断开连接、加载中、读取失败、章节未开放（需要人工）等交互与异常状态：
 
 ```bash
 flutter test test/visual_capture.dart --update-goldens

@@ -112,15 +112,15 @@ class _ChapterContent extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AcxSpacing.lg),
-              AcxStatusBadge(
-                label: state.chaptersState == LoadState.loading ? '读取中' : '只读视图',
-                status: state.chaptersState == LoadState.loading ? AcxStatus.running : AcxStatus.idle,
-              ),
+              // 「只读视图」是常驻模式标记，不随加载 / 失败状态改变，避免标签位语义跳动。
+              const AcxStatusBadge(label: '只读视图', status: AcxStatus.idle),
             ],
           ),
           const SizedBox(height: AcxSpacing.md),
           Text(
-            '共 ${state.chapters.length} 章 · 展开章节时按需读取任务点',
+            state.chaptersState == LoadState.ready
+                ? '共 ${state.chapters.length} 章 · 展开章节时按需读取任务点'
+                : '章节尚未读取完成 · 完成后可展开查看任务点',
             style: const TextStyle(fontSize: 12, color: AcxColors.textTertiary),
           ),
           const SizedBox(height: AcxSpacing.lg),

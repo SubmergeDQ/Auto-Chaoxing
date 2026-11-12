@@ -123,7 +123,7 @@ void main() {
       state: signedInState()
         ..chaptersState = LoadState.error
         ..chapters = <Chapter>[]
-        ..chaptersError = '章节页面解析失败，可能是课程页面结构发生了变化。',
+        ..chaptersError = '暂时没能读到章节，请检查网络后重试。',
       fontFamily: family,
     );
     await capture(
@@ -150,6 +150,15 @@ void main() {
       state: signedInState(),
       fontFamily: family,
       openCourse: true,
+    );
+    await capture(
+      tester: tester,
+      name: 'mobile-chapters-expanded',
+      size: const Size(390, 844),
+      state: signedInState(),
+      fontFamily: family,
+      openCourse: true,
+      expandFirstChapter: true,
     );
     await capture(
       tester: tester,

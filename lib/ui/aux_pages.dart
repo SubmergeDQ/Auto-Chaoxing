@@ -1,9 +1,12 @@
 // 协议自检页与运行约束页。
 // 自检向量与 core/chaoxing_core.py、test/crypto_test.dart 三者一致。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/crypto.dart';
 import '../state/app_state.dart';
+import 'courses_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -121,7 +124,7 @@ class _VectorCard extends StatelessWidget {
                 ),
               ),
               AcxStatusBadge(
-                label: ok ? 'PASS' : 'FAIL',
+                label: ok ? '通过' : '未通过',
                 status: ok ? AcxStatus.success : AcxStatus.failed,
               ),
             ],
@@ -195,7 +198,7 @@ class SettingsPage extends StatelessWidget {
                 _SettingRow(
                   icon: Icons.speed_rounded,
                   title: '节流间隔',
-                  detail: '每题 2–4 秒随机 · 每段进度 1 秒 · 每课程 30 秒起',
+                  detail: '答题 2–4 秒 · 进度 1 秒 · 课程 30 秒',
                 ),
                 Divider(height: 1),
                 _SettingRow(
@@ -266,16 +269,27 @@ class SettingsPage extends StatelessWidget {
                       Text(
                         state.signedIn
                             ? '${state.profile?.school ?? "学校未填写"}  ·  uid ${state.profile?.uid ?? ""}'
-                            : '连接后即可读取课程与章节',
+                            : '连接账号后即可读取课程与章节',
                         style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
                       ),
                     ],
                   ),
                 ),
+                // 断开后留在设置页也要能就地重连，不必自己想到切回工作台。
                 if (state.signedIn)
                   OutlinedButton(
                     onPressed: state.signOut,
                     child: const Text('断开连接'),
+                  )
+                else
+                  FilledButton(
+                    onPressed: () => unawaited(
+                      showDialog<void>(
+                        context: context,
+                        builder: (BuildContext _) => LoginDialog(state: state),
+                      ),
+                    ),
+                    child: const Text('连接账号'),
                   ),
               ],
             ),

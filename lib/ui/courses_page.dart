@@ -53,7 +53,7 @@ class _CourseListPane extends StatelessWidget {
     unawaited(
       showDialog<void>(
         context: context,
-        builder: (BuildContext _) => _LoginDialog(state: state),
+        builder: (BuildContext _) => LoginDialog(state: state),
       ),
     );
   }
@@ -73,7 +73,8 @@ class _CourseListPane extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(top: AcxSpacing.md),
               child: Text(
-                '选中课程后，右侧显示章节与任务点',
+                // 明确「可点」且「就地换右栏」，不用会让人以为要翻页的措辞。
+                '点击课程，右侧会显示章节与任务点',
                 style: TextStyle(fontSize: 12, color: AcxColors.textTertiary),
               ),
             ),
@@ -146,7 +147,7 @@ class _CourseListPane extends StatelessWidget {
 }
 
 /// 宽屏时指标直接排在开放画布上（只留一条分隔线），与下方卡片列表形成两种质感；
-/// 窄屏仍用卡片盒收拢，避免小屏上信息发散。
+/// 窄屏仍用卡片盒收拢，避免小屏上信息发散。未读到数据时不显示确定的 0。
 class _MetricsRow extends StatelessWidget {
   const _MetricsRow({required this.state, required this.open});
 
@@ -155,13 +156,19 @@ class _MetricsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool ready = state.coursesState == LoadState.ready;
     final Widget row = Row(
       children: <Widget>[
-        Expanded(child: AcxMetric(label: '在修课程', value: '${state.activeCourses}')),
+        Expanded(
+          child: AcxMetric(
+            label: '在修课程',
+            value: ready ? '${state.activeCourses}' : '—',
+          ),
+        ),
         Expanded(
           child: AcxMetric(
             label: '已归档',
-            value: '${state.archivedCourses}',
+            value: ready ? '${state.archivedCourses}' : '—',
             accent: AcxColors.textSecondary,
           ),
         ),
@@ -291,16 +298,17 @@ class _CourseTile extends StatelessWidget {
   }
 }
 
-class _LoginDialog extends StatefulWidget {
-  const _LoginDialog({required this.state});
+/// 登录对话框公开给设置页复用，断开连接后可以就地重新连接。
+class LoginDialog extends StatefulWidget {
+  const LoginDialog({super.key, required this.state});
 
   final AppState state;
 
   @override
-  State<_LoginDialog> createState() => _LoginDialogState();
+  State<LoginDialog> createState() => _LoginDialogState();
 }
 
-class _LoginDialogState extends State<_LoginDialog> {
+class _LoginDialogState extends State<LoginDialog> {
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();

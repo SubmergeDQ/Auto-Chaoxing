@@ -65,7 +65,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('协议自检通过'), findsOneWidget);
-      expect(find.text('PASS'), findsNWidgets(2));
+      expect(find.text('通过'), findsNWidgets(2));
       expect(find.text('AES-CBC 登录加密'), findsOneWidget);
     });
 

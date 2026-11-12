@@ -128,41 +128,48 @@ class AcxErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 与空态、加载态共用「开放居中」的占位语法，状态切换时容器不跳动。
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: AcxSectionCard(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  const Icon(Icons.error_outline_rounded, color: AcxColors.danger, size: 20),
-                  const SizedBox(width: AcxSpacing.sm),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AcxColors.textPrimary,
-                    ),
-                  ),
-                ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AcxSpacing.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 56,
+              height: 56,
+              decoration: const BoxDecoration(
+                color: AcxColors.dangerSoft,
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: AcxSpacing.md),
-              Text(
+              child: const Icon(Icons.error_outline_rounded, size: 26, color: AcxColors.danger),
+            ),
+            const SizedBox(height: AcxSpacing.xl),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: AcxColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: AcxSpacing.sm),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Text(
                 message,
+                textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 13, height: 1.6, color: AcxColors.textSecondary),
               ),
-              const SizedBox(height: AcxSpacing.xl),
-              OutlinedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('重试'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: AcxSpacing.xl),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('重试'),
+            ),
+          ],
         ),
       ),
     );
