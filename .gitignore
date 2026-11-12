@@ -54,9 +54,10 @@ state.json
 diagnostics-*.zip
 *.log
 
-# 本地工具数据与设计过程文件
+# 本地工具数据、视觉取证与过程文件
 .workbuddy/
 .oil-ui/
+test/goldens/
 
 # 操作系统
 .DS_Store

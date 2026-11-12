@@ -147,7 +147,59 @@ class ChaoxingApi {
     }
   }
 
-  /// 章节卡片。返回 null 表示章节未开放（上一章未完成/测验未交），不是 bug。
+  /// 章节列表：从学生课程页 HTML 里提取 chapterId 与标题。
+  /// 与 core/chaoxing_core.py 的 chapters() 同一套规则。
+  Future<Result<List<Chapter>>> fetchChapters({
+    required String courseId,
+    required String classId,
+    String cpi = '',
+  }) async {
+    try {
+      final Response<String> resp = await _dio.get<String>(
+        'https://mooc1.chaoxing.com/mycourse/studentcourse',
+        queryParameters: <String, dynamic>{
+          'courseId': courseId,
+          'clazzid': classId,
+          'forcedJoin': '1',
+          'knowledgeid': '0',
+          'ut': 's',
+          'cpi': cpi,
+        },
+        options: Options(
+          headers: <String, dynamic>{'Referer': 'https://i.chaoxing.com'},
+        ),
+      );
+      final String html = resp.data ?? '';
+      if (_looksLikeLogin(html)) {
+        return const Err<List<Chapter>>('authExpired', '登录已失效');
+      }
+      final List<Chapter> out = <Chapter>[];
+      final Set<String> seen = <String>{};
+      final RegExp titled = RegExp(
+        r'chapterId=(\d+)[^>]*>\s*(?:<[^>]+>\s*)*([^<]{1,60})',
+      );
+      for (final RegExpMatch m in titled.allMatches(html)) {
+        final String id = m.group(1) ?? '';
+        final String title = (m.group(2) ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+        if (id.isEmpty || !seen.add(id)) continue;
+        out.add(Chapter(chapterId: id, title: title.isEmpty ? '章节 $id' : title));
+      }
+      if (out.isEmpty) {
+        // mooc2 折叠结构里标题和 anchor 不同行，退化为只取 id。
+        for (final RegExpMatch m in RegExp(r'chapterId=(\d+)').allMatches(html)) {
+          final String id = m.group(1) ?? '';
+          if (id.isNotEmpty && seen.add(id)) {
+            out.add(Chapter(chapterId: id, title: '章节 $id'));
+          }
+        }
+      }
+      return Ok<List<Chapter>>(out);
+    } on DioException catch (e) {
+      return Err<List<Chapter>>('network', e.message ?? '网络错误');
+    }
+  }
+
+  /// 章节卡片。返回 locked 表示章节未开放（上一章未完成/测验未交），不是 bug。
   Future<Result<ChapterCards>> fetchCards({
     required String courseId,
     required String classId,
