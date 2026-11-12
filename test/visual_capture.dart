@@ -171,6 +171,31 @@ void main() {
       fontFamily: family,
       page: 1,
     );
+    await capture(
+      tester: tester,
+      name: 'desktop-run-attention',
+      size: const Size(1440, 900),
+      state: runState(phase: TaskPhase.needsAttention),
+      fontFamily: family,
+      page: 1,
+    );
+    await capture(
+      tester: tester,
+      name: 'desktop-run-failed',
+      size: const Size(1440, 900),
+      state: runState(phase: TaskPhase.failed),
+      fontFamily: family,
+      page: 1,
+    );
+    // 已有任务在执行时，章节入口禁用并写明原因。
+    await capture(
+      tester: tester,
+      name: 'desktop-run-busy',
+      size: const Size(1440, 900),
+      state: runState(phase: TaskPhase.running),
+      fontFamily: family,
+      expandFirstChapter: true,
+    );
 
     // 移动端：课程列表、章节下钻、自检、设置、空态、执行中
     await capture(
@@ -296,8 +321,55 @@ AppState signedInState({String? cardsErrorCode}) {
 /// 注入一次执行快照，让执行页有确定的进度与日志可渲染，不发任何请求。
 AppState runState({required TaskPhase phase}) {
   final AppState state = signedInState();
-  final bool done = phase == TaskPhase.succeeded;
   final DateTime start = DateTime(2026, 11, 12, 19, 40, 8);
+  DateTime at(int minutes, int seconds) =>
+      start.add(Duration(minutes: minutes, seconds: seconds));
+
+  final List<TaskLog> logs = <TaskLog>[
+    TaskLog('开始处理「第一章 函数与极限」，共 2 个视频任务点', at: start),
+    TaskLog('开始：1.1 映射与函数', at: at(0, 2)),
+    TaskLog('1.1 映射与函数：已上报 0:00 / 10:00', level: 'trace', at: at(0, 4)),
+    TaskLog('1.1 映射与函数：已上报 5:00 / 10:00', level: 'trace', at: at(2, 0)),
+    TaskLog('通过：1.1 映射与函数', at: at(3, 12)),
+  ];
+
+  late final int done;
+  late final String message;
+  switch (phase) {
+    case TaskPhase.running:
+      done = 1;
+      message = '';
+      logs
+        ..add(TaskLog('开始：1.2 数列的极限', at: at(3, 14)))
+        ..add(TaskLog('1.2 数列的极限：已上报 1:00 / 10:00', level: 'trace', at: at(3, 19)));
+    case TaskPhase.succeeded:
+      done = 2;
+      message = '2 / 2 个任务点已通过';
+      logs
+        ..add(TaskLog('开始：1.2 数列的极限', at: at(3, 14)))
+        ..add(TaskLog('通过：1.2 数列的极限', at: at(4, 20)))
+        ..add(TaskLog('结束：$message', at: at(4, 23)));
+    case TaskPhase.needsAttention:
+      done = 1;
+      message = '登录已失效，请重新连接账号后再继续';
+      logs
+        ..add(TaskLog('开始：1.2 数列的极限', at: at(3, 14)))
+        ..add(TaskLog(message, level: 'error', at: at(3, 19)));
+    case TaskPhase.failed:
+      done = 1;
+      message = '1 / 2 个任务点已通过，1 个未通过';
+      logs
+        ..add(TaskLog('开始：1.2 数列的极限', at: at(3, 14)))
+        ..add(TaskLog('未通过：1.2 数列的极限（可能有人脸抽检或倍速限制）',
+            level: 'warn', at: at(4, 20)))
+        ..add(TaskLog('结束：$message', level: 'warn', at: at(4, 23)));
+    default:
+      done = 0;
+      message = '';
+  }
+
+  final bool finished =
+      phase == TaskPhase.succeeded || phase == TaskPhase.failed || phase == TaskPhase.needsAttention;
 
   state.run.seedForPreview(
     courseName: '高等数学（上）',
@@ -305,28 +377,15 @@ AppState runState({required TaskPhase phase}) {
     course: kDemoCourses.first,
     chapter: kDemoChapters.first,
     startedAt: start,
-    finishedAt: done ? DateTime(2026, 11, 12, 19, 44, 31) : null,
+    finishedAt: finished ? at(4, 23) : null,
     progress: TaskProgress(
       phase: phase,
-      current: done ? '' : '1.2 数列的极限',
-      done: done ? 2 : 1,
+      current: phase == TaskPhase.running ? '1.2 数列的极限' : '',
+      done: done,
       total: 2,
-      message: done ? '完成 2 / 2' : '',
+      message: message,
     ),
-    logs: <TaskLog>[
-      TaskLog('开始处理「第一章 函数与极限」，共 2 个视频任务点', at: start),
-      TaskLog('开始：1.1 映射与函数', at: start.add(const Duration(seconds: 2))),
-      TaskLog('1.1 映射与函数：已上报 0s / 600s', level: 'trace', at: start.add(const Duration(seconds: 4))),
-      TaskLog('1.1 映射与函数：已上报 300s / 600s', level: 'trace', at: start.add(const Duration(minutes: 2))),
-      TaskLog('完成：1.1 映射与函数', at: start.add(const Duration(minutes: 3, seconds: 12))),
-      TaskLog('开始：1.2 数列的极限', at: start.add(const Duration(minutes: 3, seconds: 14))),
-      TaskLog('1.2 数列的极限：已上报 60s / 600s', level: 'trace',
-          at: start.add(const Duration(minutes: 3, seconds: 19))),
-      if (done) ...<TaskLog>[
-        TaskLog('完成：1.2 数列的极限', at: start.add(const Duration(minutes: 4, seconds: 20))),
-        TaskLog('结束：完成 2 / 2', at: start.add(const Duration(minutes: 4, seconds: 23))),
-      ],
-    ],
+    logs: logs,
   );
   return state;
 }
@@ -391,7 +450,8 @@ Future<void> capture({
     final Finder nav = find.text(wide ? '任务执行' : '执行');
     if (nav.evaluate().isNotEmpty) {
       await tester.tap(nav.first);
-      await tester.pump(const Duration(milliseconds: 300));
+      // 底栏选中胶囊有过渡动画，等它走完再截图，否则选中态会停在上一项。
+      await tester.pump(const Duration(milliseconds: 600));
     }
   }
   if (page == 2) {
@@ -399,14 +459,14 @@ Future<void> capture({
     final Finder nav = find.text(wide ? '协议自检' : '自检');
     if (nav.evaluate().isNotEmpty) {
       await tester.tap(nav.first);
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 600));
     }
   }
   if (page == 3) {
     final Finder nav = find.text('设置');
     if (nav.evaluate().isNotEmpty) {
       await tester.tap(nav.first);
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 600));
       final Finder disconnect = find.text('断开连接');
       if (disconnect.evaluate().isNotEmpty) {
         await tester.ensureVisible(disconnect);

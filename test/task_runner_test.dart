@@ -42,8 +42,8 @@ void main() {
       expect(progress.last.done, 2);
       expect(progress.last.total, 2);
       expect(logs.any((TaskLog l) => l.message.contains('开始处理')), isTrue);
-      expect(logs.any((TaskLog l) => l.message == '完成：1.1 映射与函数'), isTrue);
-      expect(logs.last.message, contains('完成 2 / 2'));
+      expect(logs.any((TaskLog l) => l.message == '通过：1.1 映射与函数'), isTrue);
+      expect(logs.last.message, contains('2 / 2 个任务点已通过'));
     });
 
     test('到结尾仍未通过的任务点计入失败，不影响其他任务点', () async {

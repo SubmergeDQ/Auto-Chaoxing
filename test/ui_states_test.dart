@@ -56,7 +56,7 @@ void main() {
       chapter: kDemoChapters.first,
       logs: <TaskLog>[
         TaskLog('开始处理「第一章 函数与极限」，共 3 个视频任务点'),
-        TaskLog('完成：1.1 映射与函数'),
+        TaskLog('通过：1.1 映射与函数'),
         TaskLog('开始：1.2 数列的极限'),
       ],
     );
@@ -140,7 +140,7 @@ void main() {
       await tester.tap(find.text('执行'));
       await tester.pump();
 
-      expect(find.text('还没有执行记录'), findsOneWidget);
+      expect(find.text('还没有开始执行'), findsOneWidget);
       expect(find.text('去课程工作台'), findsOneWidget);
 
       await tester.tap(find.text('去课程工作台'));
@@ -156,10 +156,41 @@ void main() {
       await tester.pump();
 
       expect(find.text('运行中'), findsOneWidget);
-      expect(find.textContaining('已完成 1 / 3'), findsOneWidget);
+      expect(find.textContaining('已通过 1 / 3'), findsOneWidget);
       expect(find.textContaining('正在上报 1.2 数列的极限'), findsOneWidget);
       expect(find.text('停止执行'), findsOneWidget);
-      expect(find.text('完成：1.1 映射与函数'), findsOneWidget);
+      expect(find.text('通过：1.1 映射与函数'), findsOneWidget);
+      // 执行中的日志是本次运行的唯一现场证据，不给清空入口。
+      expect(find.text('清空日志'), findsNothing);
+    });
+
+    testWidgets('需要人工时把停下原因摆在状态卡上', (WidgetTester tester) async {
+      final AppState state = signedInState();
+      state.run.seedForPreview(
+        courseName: '高等数学（上）',
+        chapterTitle: '第一章 函数与极限',
+        progress: const TaskProgress(
+          phase: TaskPhase.needsAttention,
+          done: 1,
+          total: 2,
+          message: '登录已失效，请重新连接账号后再继续',
+        ),
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+        logs: <TaskLog>[
+          TaskLog('登录已失效，请重新连接账号后再继续', level: 'error'),
+        ],
+      );
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+
+      await tester.tap(find.text('执行'));
+      await tester.pump();
+
+      expect(find.text('需要人工'), findsOneWidget);
+      expect(find.textContaining('登录已失效'), findsWidgets);
+      expect(find.textContaining('不会自动重试'), findsOneWidget);
+      expect(find.text('再次执行'), findsOneWidget);
+      expect(find.text('停止执行'), findsNothing);
     });
 
     testWidgets('已完成的执行给出再次执行，不再显示停止', (WidgetTester tester) async {
@@ -168,7 +199,7 @@ void main() {
       await tester.tap(find.text('执行'));
       await tester.pump();
 
-      expect(find.text('已完成'), findsOneWidget);
+      expect(find.text('本次执行完成'), findsOneWidget);
       expect(find.text('再次执行'), findsOneWidget);
       expect(find.text('停止执行'), findsNothing);
     });
@@ -186,7 +217,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('执行本章视频'), findsOneWidget);
-      expect(find.text('2 个视频任务点 · 按 60 秒步长上报'), findsOneWidget);
+      expect(find.text('2 个视频任务点 · 耗时与视频总长相近'), findsOneWidget);
 
       final Finder runButton = find.text('执行本章视频');
       await tester.ensureVisible(runButton);
@@ -231,7 +262,7 @@ void main() {
       expect(state.run.hasRun, isTrue);
       expect(find.text('第一章 函数与极限'), findsOneWidget, reason: '状态卡显示本次章节');
       expect(find.text('执行日志'), findsOneWidget);
-      expect(find.text('已完成'), findsOneWidget);
+      expect(find.text('本次执行完成'), findsOneWidget);
     });
   });
 }

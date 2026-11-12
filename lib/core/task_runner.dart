@@ -185,7 +185,7 @@ class TaskRunner {
       switch (r) {
         case Ok<bool>(value: true):
           completed.add(point.name);
-          _log('完成：${point.name}', level: 'info');
+          _log('通过：${point.name}', level: 'info');
         case Ok<bool>():
           failed.add(point.name);
           _log('未通过：${point.name}（可能有人脸抽检或倍速限制）', level: 'warn');
@@ -234,22 +234,22 @@ class TaskRunner {
     }
 
     final bool allOk = failed.isEmpty;
+    final String summary = '${completed.length} / ${videos.length} 个任务点已通过';
     _log(
-      '结束：完成 ${completed.length} / ${videos.length}'
-      '${failed.isEmpty ? '' : '，${failed.length} 个未通过'}',
+      '结束：$summary${failed.isEmpty ? '' : '，${failed.length} 个未通过'}',
       level: allOk ? 'info' : 'warn',
     );
     _emit(TaskProgress(
       phase: allOk ? TaskPhase.succeeded : TaskPhase.failed,
       done: videos.length,
       total: videos.length,
-      message: '完成 ${completed.length} / ${videos.length}',
+      message: summary,
     ));
     return VideoRunnerResult(
       phase: allOk ? TaskPhase.succeeded : TaskPhase.failed,
       completed: completed,
       failed: failed,
-      message: '完成 ${completed.length} / ${videos.length}',
+      message: summary,
     );
   }
 
@@ -284,7 +284,7 @@ class TaskRunner {
         case Ok<bool>():
           errors = 0;
           _log(
-            '${point.name}：已上报 ${last ? duration : playTime}s / ${duration}s',
+            '${point.name}：已上报 ${_span(last ? duration : playTime)} / ${_span(duration)}',
             level: 'trace',
           );
         case Err<bool>():
@@ -300,4 +300,10 @@ class TaskRunner {
       await _delay(const Duration(seconds: 1));
     }
   }
+}
+
+/// 把秒数写成 m:ss：日志里「已上报 5:00 / 10:00」比 300s / 600s 好读。
+String _span(int seconds) {
+  final int safe = seconds < 0 ? 0 : seconds;
+  return '${safe ~/ 60}:${(safe % 60).toString().padLeft(2, '0')}';
 }

@@ -116,8 +116,9 @@ class _ChapterContent extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AcxSpacing.lg),
-              // 「只读视图」是常驻模式标记，不随加载 / 失败状态改变，避免标签位语义跳动。
-              const AcxStatusBadge(label: '只读视图', status: AcxStatus.idle),
+              // 章节可执行后这里不能再写「只读视图」：执行会向平台上报进度，
+              // 只读指的是任务点数据不可手改，进度仍由平台判定。
+              const AcxStatusBadge(label: '进度由平台判定', status: AcxStatus.idle),
             ],
           ),
           const SizedBox(height: AcxSpacing.md),
@@ -471,7 +472,7 @@ class _RunFooter extends StatelessWidget {
     } else if (busy) {
       hint = '已有章节在执行，结束后可以再开始';
     } else {
-      hint = '${videos.length} 个视频任务点 · 按 60 秒步长上报';
+      hint = '${videos.length} 个视频任务点 · 耗时与视频总长相近';
     }
 
     return Padding(

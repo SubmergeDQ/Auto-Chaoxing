@@ -47,7 +47,7 @@ void main() {
       expect(state.run.courseName, '高等数学（上）');
       expect(state.run.chapterTitle, '第一章 函数与极限');
       expect(state.run.logs, isNotEmpty);
-      expect(state.run.logs.last.message, contains('完成 2 / 2'));
+      expect(state.run.logs.last.message, contains('2 / 2 个任务点已通过'));
     });
 
     test('执行中再点开始会被忽略，保持单账号串行', () async {

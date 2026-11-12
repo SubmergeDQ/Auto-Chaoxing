@@ -25,8 +25,8 @@ Future<void> startChapterRun(
       .where((TaskPoint p) => p.isVideo)
       .length;
   final String scope = videoCount > 0
-      ? '将处理「${chapter.title}」中的 $videoCount 个视频任务点，按 60 秒步长上报进度。'
-      : '将处理「${chapter.title}」中的视频任务点，按 60 秒步长上报进度。';
+      ? '将处理「${chapter.title}」中的 $videoCount 个视频任务点，文档与作业不在本次范围。'
+      : '将处理「${chapter.title}」中的视频任务点，文档与作业不在本次范围。';
 
   final bool? confirmed = await showDialog<bool>(
     context: context,
@@ -39,7 +39,8 @@ Future<void> startChapterRun(
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AcxColors.textPrimary),
       ),
       content: Text(
-        '$scope\n\n遇到人脸抽检、验证码或登录失效会立即停止，交回你自己处理。',
+        '$scope耗时与视频总长相近，期间可以随时停止。\n\n'
+        '遇到人脸抽检、验证码或登录失效会立即停止，交回你自己处理。',
         style: const TextStyle(fontSize: 13, height: 1.6, color: AcxColors.textSecondary),
       ),
       actionsPadding: const EdgeInsets.fromLTRB(AcxSpacing.xl, 0, AcxSpacing.xl, AcxSpacing.xl),
@@ -73,8 +74,9 @@ class RunPage extends StatelessWidget {
     if (!run.hasRun && run.logs.isEmpty) {
       return AcxEmptyState(
         icon: Icons.bolt_outlined,
-        title: '还没有执行记录',
-        message: '到课程工作台展开章节，点「执行本章视频」。\n执行时按 60 秒步长上报进度，遇到人脸抽检或验证码会立即停下。',
+        title: '还没有开始执行',
+        message: '到课程工作台展开章节，点「执行本章视频」。\n'
+            '执行时这里会显示进度与日志；遇到人脸抽检、验证码或登录失效会立即停下。',
         action: onGoToCourses == null
             ? null
             : OutlinedButton.icon(
@@ -128,18 +130,22 @@ _PhaseStyle _phaseStyle(TaskPhase phase) {
         '按 60 秒步长上报进度。可以随时停止，已通过的进度不会退回。',
       );
     case TaskPhase.succeeded:
-      return const _PhaseStyle('已完成', AcxStatus.success, '本章视频任务点已处理完。');
+      return const _PhaseStyle(
+        '本次执行完成',
+        AcxStatus.success,
+        '可以回课程工作台核对任务点状态；平台若有延迟，稍后再看。',
+      );
     case TaskPhase.failed:
       return const _PhaseStyle(
-        '部分未完成',
+        '部分未通过',
         AcxStatus.failed,
-        '有任务点到结尾仍未通过，通常是平台判定观看不足。可以再次执行重试。',
+        '可以再次执行重试；仍未通过时，多半是平台判定观看时长不足。',
       );
     case TaskPhase.needsAttention:
       return const _PhaseStyle(
         '需要人工',
         AcxStatus.attention,
-        '已停止，不会自动重试。按上面的原因处理后再执行。',
+        '已停止，不会自动重试。处理完上面的原因后再执行。',
       );
     case TaskPhase.stopped:
       return const _PhaseStyle(
@@ -161,6 +167,10 @@ class _StatusCard extends StatelessWidget {
     final _PhaseStyle style = _phaseStyle(run.phase);
     final bool hasChapter = run.chapterTitle.isNotEmpty;
     final bool showProgress = run.progress.total > 0 || run.busy;
+    // 终止态必须把原因摆在卡片上：日志可能已经滚走，颜色 + 徽章不足以说明为什么停。
+    final bool showReason =
+        (run.phase == TaskPhase.failed || run.phase == TaskPhase.needsAttention) &&
+            run.progress.message.isNotEmpty;
 
     return AcxSectionCard(
       child: Column(
@@ -202,6 +212,13 @@ class _StatusCard extends StatelessWidget {
             const SizedBox(height: AcxSpacing.lg),
             _ProgressRow(run: run),
           ],
+          if (showReason) ...<Widget>[
+            const SizedBox(height: AcxSpacing.md),
+            _ReasonBanner(
+              message: run.progress.message,
+              attention: run.phase == TaskPhase.needsAttention,
+            ),
+          ],
           const SizedBox(height: AcxSpacing.md),
           Text(
             style.hint,
@@ -215,12 +232,11 @@ class _StatusCard extends StatelessWidget {
             children: <Widget>[
               if (run.busy)
                 OutlinedButton.icon(
+                  // 停止是用户主动中断，不是失败，用中性描边而不是失败红。
                   onPressed: run.stop,
-                  icon: const Icon(Icons.stop_circle_outlined, size: 18, color: AcxColors.danger),
-                  label: const Text('停止执行', style: TextStyle(color: AcxColors.danger)),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: AcxColors.danger.withValues(alpha: 0.4)),
-                  ),
+                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                  label: const Text('停止执行'),
+                  style: OutlinedButton.styleFrom(foregroundColor: AcxColors.textPrimary),
                 )
               else if (run.canRerun)
                 FilledButton.icon(
@@ -228,11 +244,13 @@ class _StatusCard extends StatelessWidget {
                   icon: const Icon(Icons.replay_rounded, size: 18),
                   label: const Text('再次执行'),
                 ),
-              if (run.logs.isNotEmpty)
+              // 执行中不提供清空：日志是本次执行唯一的现场证据。
+              if (!run.busy && run.logs.isNotEmpty)
                 TextButton.icon(
                   onPressed: run.clearLogs,
                   icon: const Icon(Icons.delete_sweep_outlined, size: 18),
                   label: const Text('清空日志'),
+                  style: TextButton.styleFrom(foregroundColor: AcxColors.textSecondary),
                 ),
             ],
           ),
@@ -253,6 +271,42 @@ class _StatusCard extends StatelessWidget {
       buffer.write(finished == null ? ' · $start 开始' : ' · $start – ${_clock(finished)}');
     }
     return buffer.toString();
+  }
+}
+
+class _ReasonBanner extends StatelessWidget {
+  const _ReasonBanner({required this.message, required this.attention});
+
+  final String message;
+  final bool attention;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = attention ? AcxColors.warning : AcxColors.danger;
+    return Container(
+      padding: const EdgeInsets.all(AcxSpacing.md),
+      decoration: BoxDecoration(
+        color: attention ? AcxColors.warningSoft : AcxColors.dangerSoft,
+        borderRadius: BorderRadius.circular(AcxRadius.sm),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            attention ? Icons.front_hand_outlined : Icons.error_outline_rounded,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: AcxSpacing.sm),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 12, height: 1.5, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -284,7 +338,7 @@ class _ProgressRow extends StatelessWidget {
         Text.rich(
           TextSpan(
             children: <InlineSpan>[
-              TextSpan(text: known ? '已完成 $done / $total' : '正在读取任务点'),
+              TextSpan(text: known ? '已通过 $done / $total' : '正在读取任务点'),
               if (current.isNotEmpty)
                 TextSpan(
                   text: ' · 正在上报 $current',
@@ -349,10 +403,11 @@ class _LogPanelState extends State<_LogPanel> {
               ),
             ),
             const Spacer(),
-            Text(
-              '${logs.length} 条',
-              style: const TextStyle(fontSize: 11, color: AcxColors.textTertiary),
-            ),
+            if (logs.length >= RunController.maxLogs)
+              const Text(
+                '仅保留最近 400 条',
+                style: TextStyle(fontSize: 11, color: AcxColors.textTertiary),
+              ),
           ],
         ),
         const SizedBox(height: AcxSpacing.md),
