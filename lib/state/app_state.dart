@@ -5,13 +5,36 @@ import 'package:flutter/foundation.dart';
 
 import '../core/chaoxing_api.dart';
 import '../core/models.dart';
+import 'run_controller.dart';
 
 enum LoadState { idle, loading, ready, error }
 
 class AppState extends ChangeNotifier {
-  AppState({ChaoxingApi? api}) : api = api ?? ChaoxingApi();
+  AppState({ChaoxingApi? api, Future<void> Function(Duration)? sleep})
+      : api = api ?? ChaoxingApi(),
+        _sleep = sleep {
+    run = RunController(api: this.api, onChanged: _notify, sleep: _sleep);
+  }
 
   final ChaoxingApi api;
+  final Future<void> Function(Duration)? _sleep;
+
+  /// 执行会话：进度、日志与停止入口都在这里。
+  late final RunController run;
+
+  bool _disposed = false;
+
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    run.dispose();
+    super.dispose();
+  }
 
   Profile? profile;
 
@@ -49,7 +72,7 @@ class AppState extends ChangeNotifier {
           : r.message;
     }
     profile = (r as Ok<Profile>).value;
-    notifyListeners();
+    _notify();
     await loadCourses();
     return null;
   }
@@ -57,7 +80,7 @@ class AppState extends ChangeNotifier {
   Future<void> loadCourses() async {
     coursesState = LoadState.loading;
     coursesError = null;
-    notifyListeners();
+    _notify();
     final Result<List<Course>> r = await api.fetchCourses();
     if (r is Err<List<Course>>) {
       courses = <Course>[];
@@ -67,7 +90,7 @@ class AppState extends ChangeNotifier {
       courses = (r as Ok<List<Course>>).value;
       coursesState = LoadState.ready;
     }
-    notifyListeners();
+    _notify();
   }
 
   Future<void> selectCourse(Course course) async {
@@ -77,7 +100,7 @@ class AppState extends ChangeNotifier {
     chapters = <Chapter>[];
     _pointsCache.clear();
     _pointErrors.clear();
-    notifyListeners();
+    _notify();
 
     final Result<List<Chapter>> r = await api.fetchChapters(
       courseId: course.courseId,
@@ -91,7 +114,7 @@ class AppState extends ChangeNotifier {
       chapters = (r as Ok<List<Chapter>>).value;
       chaptersState = LoadState.ready;
     }
-    notifyListeners();
+    _notify();
   }
 
   /// 展开章节时按需拉任务点；已缓存或正在加载的章节不重复请求。
@@ -103,7 +126,7 @@ class AppState extends ChangeNotifier {
       return;
     }
     _loadingChapters.add(chapter.chapterId);
-    notifyListeners();
+    _notify();
 
     final Result<ChapterCards> r = await api.fetchCards(
       courseId: course.courseId,
@@ -121,7 +144,7 @@ class AppState extends ChangeNotifier {
       _pointsCache[chapter.chapterId] = (r as Ok<ChapterCards>).value.points;
       _pointErrors.remove(chapter.chapterId);
     }
-    notifyListeners();
+    _notify();
   }
 
   void clearSelection() {
@@ -131,10 +154,11 @@ class AppState extends ChangeNotifier {
     chaptersError = null;
     _pointsCache.clear();
     _pointErrors.clear();
-    notifyListeners();
+    _notify();
   }
 
   void signOut() {
+    run.reset();
     profile = null;
     courses = <Course>[];
     coursesState = LoadState.idle;
