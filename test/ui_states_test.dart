@@ -26,7 +26,7 @@ UpdateState noUpdateState() => UpdateState(
         read: () async => DateTime.now(),
         write: (DateTime _) async {},
       ),
-      currentVersion: '0.4.0',
+      currentVersion: '0.4.1',
       quitApp: () async {},
     );
 
@@ -197,7 +197,7 @@ void main() {
 
       expect(find.text('Auto-Chaoxing'), findsOneWidget);
       expect(find.textContaining('github.com/SubmergeDQ/Auto-Chaoxing'), findsOneWidget);
-      expect(find.text('当前版本 v0.4.0'), findsOneWidget);
+      expect(find.text('当前版本 v0.4.1'), findsOneWidget);
       expect(find.text('检查更新'), findsOneWidget);
     });
 
