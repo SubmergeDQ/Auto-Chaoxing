@@ -56,7 +56,7 @@ jobs:
       # 发布约定要求产物是 *windows*.zip，CI 顺手打出来，免得每次手动压。
       - name: Package windows zip
         shell: pwsh
-        run: ./tool/package_windows.ps1 -SkipBuild
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tool/package_windows.ps1 -SkipBuild
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release

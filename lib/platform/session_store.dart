@@ -245,6 +245,8 @@ class SessionJar {
     } catch (_) {
       // 删不掉就留着，下次 beginLogin 会先清。
     }
+    // 别把 jar 留在一个已删除的目录上：调用方可能还会读它（例如 hasSession）。
+    jar = CookieJar();
     dir = null;
   }
 

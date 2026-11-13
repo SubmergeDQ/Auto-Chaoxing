@@ -46,13 +46,19 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release
-      - name: Package windows zip
+      # 安装器优先于 zip：客户端挑资产时优先 setup exe，升级体验更好。
+      - name: Install Inno Setup
         shell: pwsh
-        run: ./tool/package_windows.ps1 -SkipBuild
+        run: choco install innosetup --no-progress -y
+      - name: Package windows zip and installer
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tool/package_windows.ps1 -SkipBuild -Installer
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.exe
 
   publish:
     name: publish release

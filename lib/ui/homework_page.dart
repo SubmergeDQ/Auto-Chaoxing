@@ -95,7 +95,8 @@ class _HomeworkPageState extends State<HomeworkPage> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    '点「打开作答页」会在浏览器里打开，提交也在那边完成',
+                    '点「打开作答页」会在浏览器里打开；浏览器里需要已登录学习通，'
+                    '提交也在那边完成',
                     style: TextStyle(fontSize: 12, color: AcxColors.textTertiary),
                   ),
                 ],
@@ -147,7 +148,8 @@ class _HomeworkPageState extends State<HomeworkPage> {
         const Text(
           '本客户端不代提交作业：作答页的提交字段还没实测确认，'
           '猜字段会出现「本地以为交了、平台没收到」。'
-          '在网页里提交后回到这里刷新，以平台状态为准。',
+          '在网页里提交后回到这里刷新，以平台状态为准。'
+          '如果浏览器未登录学习通，先登录再打开作答页。',
           style: TextStyle(fontSize: 12, height: 1.7, color: AcxColors.textTertiary),
         ),
       ],

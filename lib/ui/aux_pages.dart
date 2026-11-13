@@ -162,42 +162,50 @@ class _AccountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final Profile? p = state.profile;
     return AcxSectionCard(
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Icon(
-            state.signedIn ? Icons.account_circle_outlined : Icons.person_off_outlined,
-            color: state.signedIn ? AcxColors.brand : AcxColors.textTertiary,
-          ),
-          const SizedBox(width: AcxSpacing.lg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  state.restoringSession ? '正在恢复登录…' : (p?.name ?? '未连接账号'),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AcxColors.textPrimary,
-                  ),
+          Row(
+            children: <Widget>[
+              Icon(
+                state.signedIn ? Icons.account_circle_outlined : Icons.person_off_outlined,
+                color: state.signedIn ? AcxColors.brand : AcxColors.textTertiary,
+              ),
+              const SizedBox(width: AcxSpacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      state.restoringSession ? '正在恢复登录…' : (p?.name ?? '未连接账号'),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AcxColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      state.restoringSession
+                          ? '正在校验上次的登录状态'
+                          : state.signedIn
+                              ? _accountLine(p)
+                              : '连接账号后即可读取课程与章节',
+                      style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  state.restoringSession
-                      ? '正在校验上次的登录状态'
-                      : state.signedIn
-                          ? _accountLine(p)
-                          : '连接账号后即可读取课程与章节',
-                  style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          // 断开后留在设置页也要能就地重连，不必自己想到切回工作台。
-          if (state.signedIn)
-            Wrap(
-              spacing: AcxSpacing.sm,
-              children: <Widget>[
+          // 按钮放到卡片下方而不是和账号信息挤同一行：
+          // 多账号时有两个按钮，390 宽的窄屏同一行放不下。
+          const SizedBox(height: AcxSpacing.md),
+          Wrap(
+            spacing: AcxSpacing.sm,
+            runSpacing: AcxSpacing.sm,
+            children: <Widget>[
+              if (state.signedIn) ...<Widget>[
                 if (state.canSwitchAccounts)
                   OutlinedButton(
                     onPressed: () => unawaited(showAccountSwitcher(context, state)),
@@ -207,12 +215,7 @@ class _AccountCard extends StatelessWidget {
                   onPressed: () => unawaited(state.signOut()),
                   child: const Text('断开连接'),
                 ),
-              ],
-            )
-          else if (!state.restoringSession)
-            Wrap(
-              spacing: AcxSpacing.sm,
-              children: <Widget>[
+              ] else if (!state.restoringSession) ...<Widget>[
                 if (state.accounts.isNotEmpty)
                   OutlinedButton(
                     onPressed: () => unawaited(showAccountSwitcher(context, state)),
@@ -223,7 +226,8 @@ class _AccountCard extends StatelessWidget {
                   child: const Text('连接账号'),
                 ),
               ],
-            ),
+            ],
+          ),
         ],
       ),
     );

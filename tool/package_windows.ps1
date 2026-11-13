@@ -52,19 +52,20 @@ Write-Host '发布时把这个 zip 传成 Release 资产，应用内「检查更
 
 if ($Installer) {
   # Inno Setup 6 的安装位置不固定，先查 PATH 再查默认目录。
-  $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-  if (-not $iscc) {
+  # 统一用字符串路径：Get-Command 返回 CommandInfo（.Source），
+  # Get-Item 返回 FileInfo（.FullName），属性名不一致，混用会取到空值。
+  $isccPath = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+  if (-not $isccPath) {
     $candidates = @(
       (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
       (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
     )
-    $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if ($found) { $iscc = Get-Item $found }
+    $isccPath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
   }
-  if (-not $iscc) {
+  if (-not $isccPath) {
     Write-Warning '未找到 Inno Setup 6（ISCC.exe），跳过安装器；zip 仍可直接分发。'
   } else {
-    & $iscc.Source "/DMyAppVersion=$version" 'tool\windows\installer.iss'
+    & $isccPath "/DMyAppVersion=$version" 'tool\windows\installer.iss'
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败：$LASTEXITCODE" }
     Write-Host "已生成 dist\auto-chaoxing-setup-$version.exe"
   }

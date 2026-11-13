@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:auto_chaoxing/core/models.dart';
+import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/core/update/app_release.dart';
 import 'package:auto_chaoxing/platform/keep_alive_settings.dart';
 import 'package:auto_chaoxing/platform/platform_services.dart';
@@ -147,6 +148,19 @@ void main() {
       expect(await store.loadAccounts(), isEmpty);
       expect(await store.hasCookies('10086'), isFalse);
       expect(await store.hasCookies('20001'), isFalse);
+    });
+
+    test('章节执行中不允许切换或登录新账号', () async {
+      final AppState state = await signInBoth();
+      state.run.seedForPreview(
+        courseName: '高等数学（上）',
+        chapterTitle: '第一章 函数与极限',
+        progress: const TaskProgress(phase: TaskPhase.running),
+      );
+
+      expect(await state.switchAccount('10086'), contains('停止'));
+      expect(await state.signIn('13700000000', 'pw'), contains('停止'));
+      expect(state.activeUid, '20001', reason: '被拒绝时不该改变当前账号');
     });
   });
 }

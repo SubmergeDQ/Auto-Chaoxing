@@ -337,6 +337,9 @@ class AppState extends ChangeNotifier {
   /// 多账号下每次登录都先换到一个空会话目录：不这么做，新账号会把 cookie
   /// 写进上一个账号的存储，之后切换就串号了。失败时恢复原来的会话。
   Future<String?> signIn(String username, String password) async {
+    // 登录新账号会清空当前账号的会话与执行状态，不能静默打断正在跑的章节。
+    if (run.busy) return '正在执行章节，请先停止再登录新账号';
+
     final SessionJar? store = session;
     final bool usePending = store != null && store.supported;
     final CookieJar previous = api.cookieJar;
@@ -396,6 +399,7 @@ class AppState extends ChangeNotifier {
   /// 让用户走一次重新登录，而不是每次切换都失败。
   Future<String?> switchAccount(String uid, {bool silent = false}) async {
     if (switchingAccount) return '正在切换账号';
+    if (run.busy) return '正在执行章节，请先停止再切换账号';
     final SessionJar? store = session;
     if (store == null || !store.supported) return '当前环境不支持切换账号';
     if (_findAccount(uid) == null) return '账号不存在';

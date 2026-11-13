@@ -20,10 +20,21 @@
 - `UpdateState.quitApp` 改为可注入字段，自建状态时用 `WindowShell.quit` 退出
 - 自动安装（automated）后统一走清理钩子，不再区分平台各写一套
 
+### 修复
+
+- 章节执行中登录新账号或切换账号会静默打断执行：现在直接拒绝并提示先停止
+- 视频执行结束后签到监听的前台通知不会恢复：每轮检查后刷新回「监听中」
+- 设置页账号卡片的按钮在 390 宽窄屏会溢出：按钮移到账号信息下方
+- `package_windows.ps1` 取 ISCC 路径时混用 `CommandInfo.Source` 与 `FileInfo.FullName`，
+  安装器分支会拿到空路径
+- CI / release 用 `-ExecutionPolicy Bypass` 调脚本；release 前安装 Inno Setup 并产出安装器
+- 登录失败后 `SessionJar.jar` 仍指向已删除的临时目录：取消登录时重置为内存 CookieJar
+- 作业页补充「浏览器需要已登录学习通」的说明
+
 ### 测试
 
-- 新增 2 条：Android 安装前清理但不退出、Windows 清理后退出
-- 全量 142 项通过
+- 新增 3 条：Android 安装前清理但不退出、Windows 清理后退出、执行中拒绝切换/登录
+- 全量 144 项通过（含签到监听通知恢复用例）
 
 ## 0.3.9 — 2026-11-13
 

@@ -242,6 +242,36 @@ void main() {
 
       controller.dispose();
     });
+
+    test('视频执行结束后，监听通知恢复为「监听中」', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi()
+        ..profile = apiDefaultProfile();
+      final RunKeeperStub keeper = RunKeeperStub();
+      bool busy = false;
+      final SignController controller = SignController(
+        api: api,
+        onChanged: () {},
+        keeper: keeper,
+        isRunBusy: () => busy,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+
+      await controller.open(kDemoCourses.first);
+      await controller.startWatching();
+
+      // 执行开始：监听让路，不应该出现「已检查」的监听通知。
+      busy = true;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(keeper.notices.any((String s) => s.contains('已检查')), isFalse);
+
+      // 执行结束：下一轮恢复前台通知，避免用户以为监听已经停了。
+      busy = false;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(keeper.notices.any((String s) => s.contains('已检查')), isTrue);
+
+      controller.stopWatching();
+      controller.dispose();
+    });
   });
 }
 

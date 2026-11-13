@@ -65,6 +65,9 @@ class SignController {
   /// 这个标志只用于「停止监听时该不该撤服务」。
   bool _holdingService = false;
 
+  /// 最近一次自动签到的结果时间，用来让通知结果多停留一会儿。
+  DateTime? _lastWatchResult;
+
   bool get polling => _poll != null;
 
   bool get canWatch => _keeper.supported;
@@ -184,7 +187,28 @@ class SignController {
     final Future<void> Function(Duration)? delay = _sleep;
     if (delay != null) await delay(Duration.zero);
     await refresh();
-    if (_watching) await _autoSignOpen();
+    if (_watching) {
+      await _autoSignOpen();
+      _syncWatchNotice();
+    }
+  }
+
+  /// 每轮检查后把通知恢复成「监听中」。
+  ///
+  /// 视频执行结束会撤掉前台通知；不主动刷一次的话，监听还在跑但通知栏
+  /// 看起来像已经停了。刚签到出结果的两分钟内不覆盖，让用户看得到结果。
+  void _syncWatchNotice() {
+    if (!_holdingService || _disposed) return;
+    final Course? current = course;
+    if (current == null) return;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastWatchResult;
+    if (last != null && now.difference(last) < const Duration(minutes: 2)) return;
+    String two(int v) => v.toString().padLeft(2, '0');
+    unawaited(_keeper.update(
+      title: '签到监听中：${current.name}',
+      body: '已检查 ${two(now.hour)}:${two(now.minute)} · 暂无需要处理的签到',
+    ));
   }
 
   /// 后台监听：起前台服务保活，并在轮询里自动签进行中的活动。
@@ -254,6 +278,7 @@ class SignController {
 
   void _notifyWatch(SignActivity activity, SignAttempt attempt) {
     if (!_holdingService) return;
+    _lastWatchResult = DateTime.now();
     final String body = attempt.ok
         ? '${activity.name}：${attempt.message}'
         : '${activity.name}：${attempt.message}（已停止自动重试）';
