@@ -1,6 +1,7 @@
 // 学习通 HTTP 客户端：只负责请求、Cookie、解析与错误归一。
 // 不包含重试策略与业务循环（那是 task_runner 的事）。
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
@@ -160,6 +161,41 @@ class ChaoxingApi {
     } on DioException catch (e) {
       return Err<Profile>('network', _netMessage(e));
     }
+  }
+
+  /// 学习通头像。按 uid 取，失败由调用方回退到首字/图标。
+  Future<Result<Uint8List>> fetchAvatar(String uid) async {
+    if (uid.isEmpty) return const Err<Uint8List>('parse', '缺少账号 id');
+    // 常见尺寸后缀：先试 120，再退回原图。
+    for (final String url in <String>[
+      'https://photo.chaoxing.com/p/${uid}_120',
+      'https://photo.chaoxing.com/p/$uid',
+    ]) {
+      try {
+        final Response<List<int>> resp = await _dio.get<List<int>>(
+          url,
+          options: Options(responseType: ResponseType.bytes),
+        );
+        final List<int>? bytes = resp.data;
+        if (resp.statusCode != 200 || bytes == null || bytes.isEmpty) continue;
+        if (!_looksLikeImage(bytes)) continue;
+        return Ok<Uint8List>(Uint8List.fromList(bytes));
+      } on DioException {
+        // 换下一个候选。
+      }
+    }
+    return const Err<Uint8List>('avatar', '没有取到头像');
+  }
+
+  /// 头像接口失败时会回 HTML 或空内容，按文件头判断比看状态码可靠。
+  static bool _looksLikeImage(List<int> bytes) {
+    if (bytes.length < 12) return false;
+    final bool jpeg = bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
+    final bool png = bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
+    final bool gif = bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46;
+    final bool webp = bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+        bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50;
+    return jpeg || png || gif || webp;
   }
 
   Future<Result<List<Course>>> fetchCourses() async {

@@ -162,5 +162,18 @@ void main() {
       expect(await state.signIn('13700000000', 'pw'), contains('停止'));
       expect(state.activeUid, '20001', reason: '被拒绝时不该改变当前账号');
     });
+
+    test('登录后拉取头像，断开账号后清空', () async {
+      api.avatarData = kTinyPng;
+      final AppState state = await signInBoth();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(state.avatarBytes, isNotNull);
+      expect(api.avatarCalls, greaterThan(0));
+
+      await state.signOut();
+
+      expect(state.avatarBytes, isNull);
+    });
   });
 }

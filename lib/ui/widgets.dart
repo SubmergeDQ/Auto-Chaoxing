@@ -1,4 +1,6 @@
 // 共享组件：先在代表页固定导航、卡片、状态与反馈的必要变体，其他页面复用同一套。
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'theme.dart';
@@ -214,37 +216,81 @@ class AcxMetric extends StatelessWidget {
 }
 
 class AcxAccountChip extends StatelessWidget {
-  const AcxAccountChip({super.key, required this.name, required this.signedIn});
+  const AcxAccountChip({
+    super.key,
+    required this.name,
+    required this.signedIn,
+    this.avatar,
+    this.onTap,
+  });
 
   final String name;
   final bool signedIn;
 
+  /// 学习通头像；取不到时回退到姓名首字。
+  final Uint8List? avatar;
+
+  /// 点击进入设置页（账号管理在那里）。
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: signedIn ? AcxColors.brandSoft : AcxColors.surfaceMuted,
+    final Uint8List? image = avatar;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(AcxRadius.sm),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            signedIn ? Icons.account_circle_outlined : Icons.person_off_outlined,
-            size: 16,
-            color: signedIn ? AcxColors.brand : AcxColors.textTertiary,
-          ),
-          const SizedBox(width: AcxSpacing.sm),
-          Text(
-            signedIn ? name : '未连接账号',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: signedIn ? AcxColors.brand : AcxColors.textSecondary,
+        child: Tooltip(
+          message: signedIn ? '账号与设置' : '连接账号或打开设置',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: signedIn ? AcxColors.brandSoft : AcxColors.surfaceMuted,
+              borderRadius: BorderRadius.circular(AcxRadius.sm),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (image != null)
+                  CircleAvatar(radius: 12, backgroundImage: MemoryImage(image))
+                else
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: signedIn ? AcxColors.brand : AcxColors.surfaceMuted,
+                    child: signedIn
+                        ? Text(
+                            name.isEmpty ? '?' : name.characters.first,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.person_off_outlined,
+                            size: 14,
+                            color: AcxColors.textTertiary,
+                          ),
+                  ),
+                const SizedBox(width: AcxSpacing.sm),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(
+                    signedIn ? name : '未连接账号',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: signedIn ? AcxColors.brand : AcxColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

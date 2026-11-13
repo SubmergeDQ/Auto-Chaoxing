@@ -219,6 +219,9 @@ class _AppShellState extends State<AppShell> {
             AcxAccountChip(
               name: widget.state.profile?.name ?? '',
               signedIn: widget.state.signedIn,
+              avatar: widget.state.avatarBytes,
+              // 顶栏右侧的昵称就是账号入口：点它进设置页管理账号。
+              onTap: () => _select(2),
             ),
           ];
           final ({String title, String subtitle}) heading =
@@ -391,7 +394,7 @@ class _Sidebar extends StatelessWidget {
                     ),
                     const SizedBox(width: AcxSpacing.sm),
                     Text(
-                      state.signedIn ? '已连接 · ${state.profile?.name ?? ''}' : '未连接账号',
+                      state.signedIn ? '已连接' : '未连接账号',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12, color: AcxColors.onSidebar),

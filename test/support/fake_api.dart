@@ -1,10 +1,21 @@
 // 可注入的协议假实现：只返回预设数据，不发任何网络请求。
 // 供状态测试、Widget 测试与视觉取证共用，保证截图里的状态是确定的。
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:auto_chaoxing/core/chaoxing_api.dart';
 import 'package:auto_chaoxing/core/models.dart';
 import 'package:cookie_jar/cookie_jar.dart';
+
+/// 1x1 透明 PNG：头像用例只需要「是一张能解码的图」。
+final Uint8List kTinyPng = Uint8List.fromList(<int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+  0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+]);
 
 class FakeChaoxingApi extends ChaoxingApi {
   FakeChaoxingApi({
@@ -52,6 +63,10 @@ class FakeChaoxingApi extends ChaoxingApi {
 
   /// 按 uid 返回资料，用于验证「切换账号后拿到的是那个账号的信息」。
   final Map<String, Profile> profilesByUid = <String, Profile>{};
+
+  /// 头像数据；null 表示取不到（界面应回退到首字）。
+  Uint8List? avatarData;
+  int avatarCalls = 0;
 
   /// 设置后，第一次上报会挂起，测试可在运行中调用停止。
   Completer<void>? reportGate;
@@ -125,6 +140,14 @@ class FakeChaoxingApi extends ChaoxingApi {
     }
     profile = demoProfile;
     return Ok<Profile>(demoProfile);
+  }
+
+  @override
+  Future<Result<Uint8List>> fetchAvatar(String uid) async {
+    avatarCalls++;
+    final Uint8List? data = avatarData;
+    if (data == null) return const Err<Uint8List>('avatar', '没有取到头像');
+    return Ok<Uint8List>(data);
   }
 
   @override

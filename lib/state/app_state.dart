@@ -153,7 +153,27 @@ class AppState extends ChangeNotifier {
 
   Profile? profile;
 
+  /// 当前账号的头像。取不到时为 null，界面回退到首字。
+  Uint8List? avatarBytes;
+
+  /// 头像请求令牌：切换账号后旧请求回来不能覆盖新账号的头像。
+  int _avatarToken = 0;
+
   bool get signedIn => profile != null;
+
+  Future<void> _loadAvatar() async {
+    final Profile? p = profile;
+    final int token = ++_avatarToken;
+    if (p == null) {
+      avatarBytes = null;
+      _notify();
+      return;
+    }
+    final Result<Uint8List> r = await api.fetchAvatar(p.uid);
+    if (_disposed || token != _avatarToken) return;
+    avatarBytes = r is Ok<Uint8List> ? r.value : null;
+    _notify();
+  }
 
   /// 启动时正在校验本地会话。UI 据此显示「正在恢复登录」，
   /// 而不是先闪一下「未连接」再自己跳回来。
@@ -285,6 +305,7 @@ class AppState extends ChangeNotifier {
       final Result<Profile> r = await api.fetchProfile();
       if (r is Ok<Profile>) {
         profile = r.value;
+        unawaited(_loadAvatar());
         // 旧版只有一个 session 根目录：校验通过后升级成按 uid 分目录。
         await _adoptLegacySession();
         _notify();
@@ -365,6 +386,7 @@ class AppState extends ChangeNotifier {
     _resetAccountScopedState();
     profile = p;
     activeUid = p.uid;
+    unawaited(_loadAvatar());
     unawaited(_rememberUsername(username.trim()));
     await _upsertAccount(p, username: username.trim(), touch: true);
     _notify();
@@ -379,6 +401,8 @@ class AppState extends ChangeNotifier {
     sign.reset();
     homework.reset();
     profile = null;
+    avatarBytes = null;
+    _avatarToken++;
     activeUid = null;
     courses = <Course>[];
     coursesState = LoadState.idle;
@@ -424,6 +448,7 @@ class AppState extends ChangeNotifier {
       }
       profile = (r as Ok<Profile>).value;
       activeUid = uid;
+      unawaited(_loadAvatar());
       await _touchAccount(uid);
       _notify();
       await loadCourses();

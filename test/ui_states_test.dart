@@ -590,6 +590,22 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('顶栏显示头像，点击昵称进入设置页', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+      state.avatarBytes = kTinyPng;
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+
+      // 头像用 CircleAvatar 渲染；取不到时也走 CircleAvatar（首字回退）。
+      expect(find.byType(CircleAvatar), findsOneWidget);
+
+      await tester.tap(find.byTooltip('账号与设置'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('断开连接'), findsOneWidget);
+      expect(find.text('账号'), findsOneWidget);
+    });
+
     testWidgets('重跑前说明哪些已通过会跳过、哪些从中间继续', (WidgetTester tester) async {
       final AppState state = courseSelectedState(
         points: const <TaskPoint>[
