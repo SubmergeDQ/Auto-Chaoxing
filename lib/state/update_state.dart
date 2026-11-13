@@ -42,18 +42,26 @@ class UpdateState extends ChangeNotifier {
     UpdateInstaller? installer,
     UpdateThrottle? throttle,
     this.currentVersion = kAppVersion,
-    Future<void> Function()? quitApp,
+    this.quitApp,
   })  : checker = checker ?? UpdateChecker(),
         installer = installer ?? createUpdateInstaller(),
         _throttle = throttle ??
-            const UpdateThrottle(read: _readLastCheck, write: _writeLastCheck),
-        _quitApp = quitApp;
+            const UpdateThrottle(read: _readLastCheck, write: _writeLastCheck);
 
   final UpdateChecker checker;
   final UpdateInstaller installer;
   final UpdateThrottle _throttle;
   final String currentVersion;
-  final Future<void> Function()? _quitApp;
+
+  /// 退出应用。Windows 上 SystemNavigator.pop 只关掉 Flutter 视图，
+  /// 进程还活着会占着 exe，安装器就写不进去。
+  Future<void> Function()? quitApp;
+
+  /// 安装前清理：停止执行、停止签到监听、结束前台服务。
+  ///
+  /// 安装器要覆盖正在运行的程序，后台任务不停会出现「装完还是旧版本」，
+  /// 或让正在跑的章节停在半路却没有任何提示。
+  Future<void> Function()? prepareUpgrade;
 
   UpdatePhase phase = UpdatePhase.idle;
   String? message;
@@ -186,10 +194,13 @@ class UpdateState extends ChangeNotifier {
         phase = UpdatePhase.ready;
         message = out.message;
         _notify();
-        if (out.mode == InstallMode.automated &&
-            installer.platform == UpdatePlatform.windows) {
-          // 安装器已经起来了：退出，让安装包能覆盖正在运行的 exe / dll。
-          await _quitApp?.call();
+        if (out.mode == InstallMode.automated) {
+          // 安装器已经起来了：先停后台任务，再退出，让安装包能覆盖
+          // 正在运行的 exe / dll。Android 由系统在安装时结束进程，不主动退。
+          await prepareUpgrade?.call();
+          if (installer.platform == UpdatePlatform.windows) {
+            await quitApp?.call();
+          }
         }
       case Err<InstallResult>():
         phase = UpdatePhase.failed;

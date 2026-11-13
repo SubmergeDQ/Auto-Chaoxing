@@ -53,7 +53,11 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release
+      # 发布约定要求产物是 *windows*.zip，CI 顺手打出来，免得每次手动压。
+      - name: Package windows zip
+        shell: pwsh
+        run: ./tool/package_windows.ps1 -SkipBuild
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: build/windows/x64/runner/Release/
+          path: dist/*.zip

@@ -108,6 +108,9 @@ class MainActivity : FlutterActivity() {
                     // 保活引导：是否已被排除在电池优化之外（= 省电策略「无限制」）
                     "isIgnoringBatteryOptimizations" -> result.success(isIgnoringBatteryOptimizations())
 
+                    // 常驻通知是保活的可见部分：没有它，服务照跑但用户看不到进度、也点不到停止。
+                    "hasNotificationPermission" -> result.success(hasNotificationPermission())
+
                     // 只发系统标准弹窗，不跳设置页：用户点「允许」一步到位。
                     // 个别 ROM 会拦截该 Intent，此时退回电池优化列表页。
                     "requestIgnoreBatteryOptimizations" -> {

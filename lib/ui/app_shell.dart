@@ -4,9 +4,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../platform/window_shell.dart';
 import '../state/app_state.dart';
 import 'about_page.dart';
 import 'aux_pages.dart';
+import 'keep_alive_page.dart';
+import 'window_settings_page.dart';
 import 'courses_page.dart';
 import 'run_console.dart';
 import 'theme.dart';
@@ -43,6 +46,114 @@ class _AppShellState extends State<AppShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(widget.state.bootstrap());
     });
+
+    final WindowShell shell = widget.state.windowShell;
+    if (shell.supported) {
+      unawaited(shell.init());
+      _closeEvents = shell.closeRequests.listen((_) => unawaited(_onCloseRequested()));
+      _trayEvents = shell.trayCommands.listen(_onTrayCommand);
+    }
+  }
+
+  // 订阅在 dispose 里成对取消；分析器跨方法看不出来，这里按住提示。
+  // ignore: cancel_subscriptions
+  StreamSubscription<void>? _closeEvents;
+  // ignore: cancel_subscriptions
+  StreamSubscription<String>? _trayEvents;
+
+  @override
+  void dispose() {
+    final StreamSubscription<void>? close = _closeEvents;
+    final StreamSubscription<String>? tray = _trayEvents;
+    if (close != null) unawaited(close.cancel());
+    if (tray != null) unawaited(tray.cancel());
+    super.dispose();
+  }
+
+  void _onTrayCommand(String command) {
+    final WindowShell shell = widget.state.windowShell;
+    switch (command) {
+      case 'show':
+        unawaited(shell.showWindow());
+      case 'quit':
+        unawaited(shell.quit());
+    }
+  }
+
+  /// 点关闭按钮：按设置决定去留；「每次询问」时弹一次。
+  Future<void> _onCloseRequested() async {
+    final WindowShell shell = widget.state.windowShell;
+    final CloseAction action = await shell.readCloseAction();
+    switch (action) {
+      case CloseAction.exitApp:
+        await shell.quit();
+        return;
+      case CloseAction.minimizeToTray:
+        await shell.hideToTray();
+        return;
+      case CloseAction.ask:
+        break;
+    }
+    if (!mounted) return;
+    final CloseAction? choice = await showDialog<CloseAction>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        backgroundColor: AcxColors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AcxRadius.lg)),
+        title: const Text(
+          '关闭窗口',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AcxColors.textPrimary),
+        ),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '想收到托盘继续后台运行，还是直接退出？\n'
+                '这个选择可以在 设置 → 窗口与托盘 里改。',
+                style: TextStyle(fontSize: 13, height: 1.7, color: AcxColors.textSecondary),
+              ),
+              if (widget.state.run.busy) ...<Widget>[
+                const SizedBox(height: AcxSpacing.md),
+                Container(
+                  padding: const EdgeInsets.all(AcxSpacing.md),
+                  decoration: BoxDecoration(
+                    color: AcxColors.warningSoft,
+                    borderRadius: BorderRadius.circular(AcxRadius.sm),
+                  ),
+                  child: const Text(
+                    '当前正在执行章节，退出会中断进度（下次可从断点继续）。',
+                    style: TextStyle(fontSize: 12, height: 1.6, color: AcxColors.warning),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(CloseAction.exitApp),
+            child: const Text('退出应用'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(CloseAction.minimizeToTray),
+            child: const Text('收到托盘'),
+          ),
+        ],
+      ),
+    );
+    if (choice == CloseAction.minimizeToTray) {
+      await shell.hideToTray();
+    } else if (choice == CloseAction.exitApp) {
+      await shell.quit();
+    }
   }
 
   void _select(int index) {
@@ -62,6 +173,9 @@ class _AppShellState extends State<AppShell> {
     if (sub != null) {
       return switch (sub) {
         SettingsSubPage.selfCheck => SelfCheckPage(probe: widget.state.probe),
+        SettingsSubPage.keepAlive =>
+          KeepAlivePage(settings: widget.state.keepAliveSettings),
+        SettingsSubPage.window => WindowSettingsPage(shell: widget.state.windowShell),
         SettingsSubPage.constraints => const ConstraintsPage(),
         SettingsSubPage.privacy => PrivacyPage(state: widget.state),
         SettingsSubPage.about => AboutPage(update: widget.state.update),

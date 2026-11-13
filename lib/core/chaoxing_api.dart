@@ -7,7 +7,9 @@ import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
 import 'crypto.dart';
+import 'homework_rules.dart';
 import 'models.dart';
+import 'sign_rules.dart';
 
 const String kMobileUa =
     'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 '
@@ -38,11 +40,26 @@ class ChaoxingApi {
           ),
         ) {
     // 这里必须用字段而不是构造参数：参数是 CookieJar?，字段已保证非空。
-    _dio.interceptors.add(CookieManager(this.cookieJar));
+    _installCookieManager();
   }
 
-  final CookieJar cookieJar;
+  /// 当前 CookieJar。切换账号时用 [useCookieJar] 整体替换。
+  CookieJar cookieJar;
   final Dio _dio;
+  CookieManager? _cookieManager;
+
+  void _installCookieManager() {
+    final CookieManager? old = _cookieManager;
+    if (old != null) _dio.interceptors.remove(old);
+    _cookieManager = CookieManager(cookieJar);
+    _dio.interceptors.add(_cookieManager!);
+  }
+
+  /// 热切换 CookieJar：多账号切换时不需要重建 API 与全部控制器。
+  void useCookieJar(CookieJar jar) {
+    cookieJar = jar;
+    _installCookieManager();
+  }
 
   Profile? profile;
 
@@ -398,6 +415,168 @@ class ChaoxingApi {
       return Ok<bool>(json['isPassed'] == true);
     } on DioException catch (e) {
       return Err<bool>('network', _netMessage(e));
+    }
+  }
+
+  /// 签到活动列表。只返回签到（type=2）与签退（type=74），其他活动类型不接。
+  ///
+  /// `ext` 是短时效会话数据，必须随活动一起原样带到预签到，不能缓存。
+  Future<Result<List<SignActivity>>> fetchSignActivities({
+    required Course course,
+  }) async {
+    try {
+      final Response<String> resp = await _dio.get<String>(
+        'https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist',
+        queryParameters: <String, dynamic>{
+          'fid': '0',
+          'showNotStartedActive': '0',
+          'courseId': course.courseId,
+          'classId': course.classId,
+          'cpi': course.cpi,
+        },
+        options: Options(
+          headers: <String, dynamic>{'Referer': 'https://mobilelearn.chaoxing.com/'},
+        ),
+      );
+      final String body = resp.data ?? '';
+      if (_looksLikeLogin(body)) {
+        return const Err<List<SignActivity>>('authExpired', '登录已失效');
+      }
+      final Map<String, dynamic>? json = _tryJson(body);
+      if (json == null) return const Err<List<SignActivity>>('parse', '签到活动无法解析');
+      final Map<String, dynamic> data =
+          (json['data'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+      final List<dynamic> raw = (data['activeList'] ?? <dynamic>[]) as List<dynamic>;
+      final List<SignActivity> out = <SignActivity>[];
+      for (final dynamic item in raw) {
+        if (item is! Map) continue;
+        final Map<String, dynamic> m = item.cast<String, dynamic>();
+        final String id = '${m['id'] ?? m['activeId'] ?? ''}';
+        if (id.isEmpty) continue;
+        final int type = int.tryParse('${m['type'] ?? 0}') ?? 0;
+        if (type != 2 && type != 74) continue;
+        out.add(
+          SignActivity(
+            activeId: id,
+            name: '${m['nameOne'] ?? m['name'] ?? '签到活动'}',
+            type: type,
+            status: int.tryParse('${m['status'] ?? -1}') ?? -1,
+            startAt: parseChaoxingTime(m['startTime']),
+            endAt: parseChaoxingTime(m['endTime']),
+            otherId: '${m['otherId'] ?? ''}',
+            ext: '${m['ext'] ?? ''}',
+          ),
+        );
+      }
+      return Ok<List<SignActivity>>(out);
+    } on DioException catch (e) {
+      return Err<List<SignActivity>>('network', _netMessage(e));
+    }
+  }
+
+  /// 执行一次签到：先预签到拿判定，再提交。
+  ///
+  /// 不做重试：同一 `activeId` 成功后重复提交会被平台判异常，
+  /// 幂等由调用方（SignController）负责。
+  Future<Result<SignAttempt>> signIn({
+    required Course course,
+    required SignActivity activity,
+    required String uid,
+    required String name,
+    required String fid,
+  }) async {
+    final Map<String, dynamic> referer = <String, dynamic>{
+      'Referer': 'https://mobilelearn.chaoxing.com/',
+    };
+    try {
+      final Response<String> pre = await _dio.post<String>(
+        'https://mobilelearn.chaoxing.com/newsign/preSign',
+        queryParameters: <String, dynamic>{
+          'courseId': course.courseId,
+          'classId': course.classId,
+          'activePrimaryId': activity.activeId,
+          'general': '1',
+          'sys': '1',
+          'ls': '1',
+          'appType': '15',
+          'uid': uid,
+          'isTeacherViewOpen': '0',
+        },
+        data: <String, dynamic>{'ext': activity.ext},
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          headers: referer,
+        ),
+      );
+      final String preHtml = pre.data ?? '';
+      if (_looksLikeLogin(preHtml)) {
+        return const Err<SignAttempt>('authExpired', '登录已失效');
+      }
+      final SignAttempt? judged = judgePreSign(preHtml);
+      if (judged != null) return Ok<SignAttempt>(judged);
+
+      final Response<String> resp = await _dio.get<String>(
+        'https://mobilelearn.chaoxing.com/pptSign/stuSignajax',
+        queryParameters: <String, dynamic>{
+          'courseId': course.courseId,
+          'classId': course.classId,
+          'activeId': activity.activeId,
+          'uid': uid,
+          'name': name,
+          'fid': fid,
+          'clientip': '',
+          'useragent': kMobileUa,
+          'appType': '15',
+          // 不伪造系统 GPS：没有定位权限时按平台约定传 -1，
+          // 需要定位的签到会由回执明确告知，交回用户在手机上完成。
+          'latitude': '-1',
+          'longitude': '-1',
+          'enc': '',
+          'enc2': '',
+          'validate': '',
+          'signCode': '',
+          'objectId': activity.otherId,
+          'type': '${activity.type}',
+        },
+        options: Options(headers: referer),
+      );
+      return Ok<SignAttempt>(judgeSignResponse(resp.data ?? ''));
+    } on DioException catch (e) {
+      return Err<SignAttempt>('network', _netMessage(e));
+    }
+  }
+
+  /// 作业列表。返回 null 结构解析失败由上层转成可读错误。
+  ///
+  /// 提交不在本客户端做：作答页的隐藏字段集合尚未抓包确认，
+  /// 猜字段提交会出现「本地以为交了、平台没收到」，比不做更糟。
+  Future<Result<List<HomeworkItem>>> fetchHomeworks({
+    required Course course,
+  }) async {
+    try {
+      final Response<String> resp = await _dio.get<String>(
+        'https://mooc1-api.chaoxing.com/work/task-list',
+        queryParameters: <String, dynamic>{
+          'courseId': course.courseId,
+          'classId': course.classId,
+          'cpi': course.cpi,
+          'ut': 's',
+        },
+        options: Options(
+          headers: <String, dynamic>{'Referer': 'https://mooc1.chaoxing.com/'},
+        ),
+      );
+      final String body = resp.data ?? '';
+      if (_looksLikeLogin(body)) {
+        return const Err<List<HomeworkItem>>('authExpired', '登录已失效');
+      }
+      final List<HomeworkItem>? list = parseHomeworkList(body);
+      if (list == null) {
+        return const Err<List<HomeworkItem>>('parse', '作业列表无法解析');
+      }
+      return Ok<List<HomeworkItem>>(list);
+    } on DioException catch (e) {
+      return Err<List<HomeworkItem>>('network', _netMessage(e));
     }
   }
 

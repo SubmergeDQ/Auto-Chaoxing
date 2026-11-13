@@ -10,12 +10,21 @@ Future<void> main() async {
   // 会话要落盘，起 App 前先把存储准备好（读一个目录，毫秒级）。
   WidgetsFlutterBinding.ensureInitialized();
   final SessionJar session = await SessionJar.open();
-  runApp(AutoChaoxingApp(api: ChaoxingApi(cookieJar: session.jar), purgeSession: session.purge));
+  runApp(AutoChaoxingApp(
+    api: ChaoxingApi(cookieJar: session.jar),
+    session: session,
+  ));
 }
 
 class AutoChaoxingApp extends StatefulWidget {
   /// [state] 与 [fontFamily] 只给测试与视觉取证注入，正常运行都传 null。
-  const AutoChaoxingApp({super.key, this.state, this.fontFamily, this.api, this.purgeSession});
+  const AutoChaoxingApp({
+    super.key,
+    this.state,
+    this.fontFamily,
+    this.api,
+    this.session,
+  });
 
   final AppState? state;
   final String? fontFamily;
@@ -23,8 +32,8 @@ class AutoChaoxingApp extends StatefulWidget {
   /// 正常运行时由 main 注入：带落盘 CookieJar 的 API。
   final ChaoxingApi? api;
 
-  /// 断开连接时清盘。
-  final Future<void> Function()? purgeSession;
+  /// 多账号会话存储；测试为 null（内存模式）。
+  final SessionJar? session;
 
   @override
   State<AutoChaoxingApp> createState() => _AutoChaoxingAppState();
@@ -32,7 +41,7 @@ class AutoChaoxingApp extends StatefulWidget {
 
 class _AutoChaoxingAppState extends State<AutoChaoxingApp> {
   late final AppState _state =
-      widget.state ?? AppState(api: widget.api, purgeSession: widget.purgeSession);
+      widget.state ?? AppState(api: widget.api, session: widget.session);
   late final bool _ownsState = widget.state == null;
 
   @override

@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 
 import '../core/models.dart';
 import '../state/app_state.dart';
+import 'homework_page.dart';
 import 'run_console.dart';
+import 'sign_in_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -122,11 +124,26 @@ class _ChapterContent extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AcxSpacing.md),
-          Text(
-            state.chaptersState == LoadState.ready
-                ? '共 ${state.chapters.length} 章 · 展开章节时按需读取任务点'
-                : '章节尚未读取完成 · 完成后可展开查看任务点',
-            style: const TextStyle(fontSize: 12, color: AcxColors.textTertiary),
+          // 用 Wrap 而不是 Row：窄屏下「章数说明 + 两个课程级按钮」会挤成一团，
+          // 允许换行比缩字号或藏按钮好。
+          Wrap(
+            spacing: AcxSpacing.md,
+            runSpacing: AcxSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              Text(
+                state.chaptersState == LoadState.ready
+                    ? '共 ${state.chapters.length} 章 · 展开章节时按需读取任务点'
+                    : '章节尚未读取完成 · 完成后可展开查看任务点',
+                style: const TextStyle(fontSize: 12, color: AcxColors.textTertiary),
+              ),
+              if (state.chaptersState == LoadState.ready && state.chapters.isNotEmpty)
+                _SignButton(state: state, course: course),
+              if (state.chaptersState == LoadState.ready && state.chapters.isNotEmpty)
+                _HomeworkButton(state: state, course: course),
+              if (state.chaptersState == LoadState.ready && state.chapters.isNotEmpty)
+                _CourseRunButton(state: state, course: course, onOpenRun: onOpenRun),
+            ],
           ),
           const SizedBox(height: AcxSpacing.lg),
           Expanded(child: _body()),
@@ -169,6 +186,115 @@ class _ChapterContent extends StatelessWidget {
         }
         return _ChapterList(state: state, onOpenRun: onOpenRun);
     }
+  }
+}
+
+/// 作业入口：只读列表 + 打开网页作答（不代提交）。
+class _HomeworkButton extends StatelessWidget {
+  const _HomeworkButton({required this.state, required this.course});
+
+  final AppState state;
+  final Course course;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool canOpen = !course.archived && state.signedIn;
+    final String reason = course.archived
+        ? '已归档课程没有作业入口'
+        : !state.signedIn
+            ? '连接账号后才能查看作业'
+            : '查看作业列表，在网页里作答';
+
+    return Tooltip(
+      message: reason,
+      child: OutlinedButton.icon(
+        onPressed: canOpen
+            ? () => unawaited(
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext _) =>
+                          HomeworkPage(state: state, course: course),
+                    ),
+                  ),
+                )
+            : null,
+        icon: const Icon(Icons.assignment_outlined, size: 18),
+        label: const Text('作业'),
+      ),
+    );
+  }
+}
+
+/// 签到入口：课程级操作，进独立页面（活动列表 + 手动签到 + 前台轮询）。
+class _SignButton extends StatelessWidget {
+  const _SignButton({required this.state, required this.course});
+
+  final AppState state;
+  final Course course;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool canOpen = !course.archived && state.signedIn;
+    final String reason = course.archived
+        ? '已归档课程不能签到'
+        : !state.signedIn
+            ? '连接账号后才能签到'
+            : '查看签到活动并手动签到';
+
+    return Tooltip(
+      message: reason,
+      child: OutlinedButton.icon(
+        onPressed: canOpen
+            ? () => unawaited(
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext _) =>
+                          SignInPage(state: state, course: course),
+                    ),
+                  ),
+                )
+            : null,
+        icon: const Icon(Icons.how_to_reg_rounded, size: 18),
+        label: const Text('签到'),
+      ),
+    );
+  }
+}
+
+/// 整门课的入口：按章节顺序跑完全部视频任务点。
+///
+/// 放在章节列表上方而不是藏在某一章里——这是范围更大的动作，
+/// 单章按钮仍然保留，两者互斥（同一时间只允许一个执行会话）。
+class _CourseRunButton extends StatelessWidget {
+  const _CourseRunButton({required this.state, required this.course, this.onOpenRun});
+
+  final AppState state;
+  final Course course;
+  final VoidCallback? onOpenRun;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool archived = course.archived;
+    final bool busy = state.run.busy;
+    final bool canRun = !archived && !busy && state.signedIn;
+    final String reason = archived
+        ? '已归档课程不能执行'
+        : !state.signedIn
+            ? '连接账号后才能执行'
+            : busy
+                ? '已有任务在执行，结束后可以再开始'
+                : '按章节顺序执行整门课的视频任务点';
+
+    return Tooltip(
+      message: reason,
+      child: OutlinedButton.icon(
+        onPressed: canRun
+            ? () => unawaited(startCourseRun(context, state, onOpenRun: onOpenRun))
+            : null,
+        icon: const Icon(Icons.playlist_play_rounded, size: 18),
+        label: Text(busy ? '任务执行中' : '执行整门课'),
+      ),
+    );
   }
 }
 

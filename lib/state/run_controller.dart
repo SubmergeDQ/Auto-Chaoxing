@@ -44,7 +44,13 @@ class RunController {
 
   TaskRunner? _runner;
   Course? _lastCourse;
-  Chapter? _lastChapter;
+  List<Chapter> _lastChapters = const <Chapter>[];
+
+  /// 整门课批量执行：batchTotal 为 0 表示当前（或上一次）是单章执行。
+  int batchTotal = 0;
+  int batchDone = 0;
+
+  bool get batchMode => batchTotal > 0;
 
   /// 保活是否真的起来了。只在 true 时刷通知，避免对没起的服务空喊。
   bool _keeping = false;
@@ -58,78 +64,208 @@ class RunController {
 
   TaskPhase get phase => progress.phase;
 
+  /// 会话正在进行（含章与章之间的空档）。只看 phase 的话，上一章刚结束、
+  /// 下一章还没开始的瞬间 busy 会变 false，用户可以再点一次开始。
+  bool _active = false;
+
   /// 正在读取或执行：此时不允许再起第二个任务（单账号串行）。
-  bool get busy => phase == TaskPhase.preparing || phase == TaskPhase.running;
+  bool get busy => _active || phase == TaskPhase.preparing || phase == TaskPhase.running;
 
   bool get hasRun => startedAt != null;
 
-  bool get canRerun => !busy && _lastCourse != null && _lastChapter != null;
+  bool get canRerun => !busy && _lastCourse != null && _lastChapters.isNotEmpty;
 
   /// 当前是否处在「熄屏也继续跑」的状态，供界面如实说明。
   bool get keeping => _keeping;
 
+  /// 批次级停止标记：用户可能正好点在「上一章结束、下一章未开始」的空档，
+  /// 此时没有 runner 可停，只能靠这个标记让循环不再往下走。
+  bool _stopBatch = false;
+
   Future<void> start({required Course course, required Chapter chapter}) async {
     if (busy || _disposed) return;
+    await _runSession(
+      course: course,
+      chapters: <Chapter>[chapter],
+      batch: false,
+    );
+  }
 
+  /// 整门课：按章节顺序串行跑，无视频的章直接跳过。
+  ///
+  /// 与单章一样，遇到 locked / 登录失效 / 人脸抽检立刻停：后面的章节依赖
+  /// 前面的完成状态，硬跑只会连续失败，还会把「需要人工」埋进一长串日志里。
+  Future<void> startCourse({
+    required Course course,
+    required List<Chapter> chapters,
+  }) async {
+    if (busy || _disposed || chapters.isEmpty) return;
+    await _runSession(
+      course: course,
+      chapters: chapters,
+      batch: true,
+    );
+  }
+
+  Future<void> _runSession({
+    required Course course,
+    required List<Chapter> chapters,
+    required bool batch,
+  }) async {
+    if (busy || _disposed || chapters.isEmpty) return;
+
+    // 会话令牌在这里就取：保活是异步的，等它回来期间 reset/新会话可能已经发生。
+    final int session = ++_session;
+    _active = true;
+    try {
+      await _runSessionInner(
+        course: course,
+        chapters: chapters,
+        batch: batch,
+        session: session,
+      );
+    } finally {
+      // 只有仍然是当前会话时才收尾：旧会话的 finally 不能把新会话的活跃状态抹掉。
+      if (session == _session) {
+        _active = false;
+        _onChanged();
+      }
+    }
+  }
+
+  Future<void> _runSessionInner({
+    required Course course,
+    required List<Chapter> chapters,
+    required bool batch,
+    required int session,
+  }) async {
     _lastCourse = course;
-    _lastChapter = chapter;
+    _lastChapters = List<Chapter>.unmodifiable(chapters);
+    _stopBatch = false;
     courseName = course.name;
-    chapterTitle = chapter.title;
+    chapterTitle = batch ? '整门课（${chapters.length} 章）' : chapters.first.title;
     logs.clear();
     droppedLogs = 0;
     startedAt = DateTime.now();
     finishedAt = null;
+    batchTotal = batch ? chapters.length : 0;
+    batchDone = 0;
     progress = const TaskProgress(phase: TaskPhase.preparing, message: '准备中…');
     _onChanged();
 
     // 先起保活再发第一个请求：首个请求之后就要等 60 秒，晚起就白等一段。
     await _beginKeeping();
-    if (_disposed) return;
+    if (_disposed || session != _session) return;
 
-    final int session = ++_session;
-    final TaskRunner runner = TaskRunner(
-      _api,
-      sleep: _sleep,
-      onProgress: (TaskProgress p) {
-        if (session != _session || _disposed) return;
-        progress = p;
-        _syncNotice();
-        _onChanged();
-      },
-      onLog: (TaskLog log) {
-        if (session != _session || _disposed) return;
-        _appendLog(log);
-      },
-    );
-    _runner = runner;
+    final _BatchTally tally = _BatchTally();
+    int processed = 0;
+    TaskPhase finalPhase = TaskPhase.succeeded;
+    String finalMessage = '';
 
-    final VideoRunnerResult result = await runner.runChapterVideos(
-      course: course,
-      chapter: chapter,
-    );
+    if (batch) {
+      _appendLog(TaskLog('开始整门课：共 ${chapters.length} 章，单章串行处理'));
+    }
+
+    for (int i = 0; i < chapters.length; i++) {
+      if (session != _session || _disposed) return;
+      if (_stopBatch) {
+        finalPhase = TaskPhase.stopped;
+        finalMessage = '已停止：已处理 $processed / ${chapters.length} 章';
+        break;
+      }
+
+      final Chapter chapter = chapters[i];
+      chapterTitle = chapter.title;
+      if (batch) {
+        batchDone = i;
+        _appendLog(TaskLog('— 第 ${i + 1}/${chapters.length} 章：${chapter.title}'));
+      }
+      _syncNotice();
+      progress = const TaskProgress(phase: TaskPhase.preparing, message: '准备中…');
+      _onChanged();
+
+      final TaskRunner runner = TaskRunner(
+        _api,
+        sleep: _sleep,
+        onProgress: (TaskProgress p) {
+          if (session != _session || _disposed) return;
+          progress = p;
+          _syncNotice();
+          _onChanged();
+        },
+        onLog: (TaskLog log) {
+          if (session != _session || _disposed) return;
+          _appendLog(log);
+        },
+      );
+      _runner = runner;
+
+      final VideoRunnerResult result = await runner.runChapterVideos(
+        course: course,
+        chapter: chapter,
+      );
+      if (session != _session || _disposed) return;
+      _runner = null;
+      processed++;
+      batchDone = processed;
+
+      switch (result.phase) {
+        case TaskPhase.succeeded:
+          if (result.completed.isEmpty && result.skipped.isEmpty) {
+            // 整章没有视频任务点：不算失败，单独计数，汇总时说清楚。
+            tally.empty++;
+          } else {
+            tally.ok++;
+          }
+        case TaskPhase.failed:
+          tally.failed++;
+        case TaskPhase.stopped:
+          finalPhase = TaskPhase.stopped;
+          finalMessage = '已停止：已处理 $processed / ${chapters.length} 章';
+        case TaskPhase.needsAttention:
+          finalPhase = TaskPhase.needsAttention;
+          finalMessage = '「${chapter.title}」需要人工处理：${result.message}';
+        case TaskPhase.preparing:
+        case TaskPhase.running:
+        case TaskPhase.idle:
+          break;
+      }
+
+      if (finalPhase == TaskPhase.needsAttention || finalPhase == TaskPhase.stopped) {
+        break;
+      }
+    }
+
     if (session != _session || _disposed) return;
-    _runner = null;
     finishedAt = DateTime.now();
-    progress = progress.copyWith(phase: result.phase, message: result.message);
+
+    if (batch) {
+      chapterTitle = '整门课（${chapters.length} 章）';
+      // 人工介入与主动停止已经有更具体的原因，不再用批次汇总盖掉它。
+      if (finalPhase == TaskPhase.succeeded || finalPhase == TaskPhase.failed) {
+        finalPhase = tally.failed > 0 ? TaskPhase.failed : TaskPhase.succeeded;
+        finalMessage = _batchSummary(tally, chapters.length);
+      }
+      _appendLog(
+        TaskLog(
+          '结束：$finalMessage',
+          level: finalPhase == TaskPhase.failed ? 'warn' : 'info',
+        ),
+      );
+    }
+
+    progress = progress.copyWith(phase: finalPhase, message: finalMessage);
     _onChanged();
-    await _finishKeeping(result);
+    await _finishKeeping(finalPhase);
   }
 
-  /// 用上一次的课程与章节再跑一遍；已经通过的任务点平台会直接判过。
-  Future<void> rerun() async {
-    final Course? course = _lastCourse;
-    final Chapter? chapter = _lastChapter;
-    if (course == null || chapter == null || busy) return;
-    await start(course: course, chapter: chapter);
-  }
-
-  void stop() {
-    final TaskRunner? runner = _runner;
-    if (runner == null) return;
-    runner.requestStop();
-    progress = progress.copyWith(message: '正在停止…');
-    _syncNotice();
-    _onChanged();
+  String _batchSummary(_BatchTally tally, int total) {
+    final List<String> parts = <String>[
+      '${tally.ok} 章完成',
+      if (tally.empty > 0) '${tally.empty} 章无视频跳过',
+      if (tally.failed > 0) '${tally.failed} 章有未通过任务点',
+    ];
+    return '${parts.join('，')}（共 $total 章）';
   }
 
   void clearLogs() {
@@ -139,13 +275,41 @@ class RunController {
     _onChanged();
   }
 
+  /// 用上一次的课程与章节再跑一遍；批量过的仍然是整门课。
+  /// 已经通过的任务点平台会直接判过。
+  Future<void> rerun() async {
+    final Course? course = _lastCourse;
+    final List<Chapter> chapters = _lastChapters;
+    if (course == null || chapters.isEmpty || busy) return;
+    await _runSession(
+      course: course,
+      chapters: chapters,
+      batch: batchMode,
+    );
+  }
+
+  void stop() {
+    _stopBatch = true;
+    final TaskRunner? runner = _runner;
+    runner?.requestStop();
+    if (runner != null) {
+      progress = progress.copyWith(message: '正在停止…');
+      _syncNotice();
+      _onChanged();
+    }
+  }
+
   /// 断开账号或切换身份时清空会话，避免旧的执行状态挂到新账号上。
   void reset() {
     _session++;
+    _active = false;
     _runner?.requestStop();
     _runner = null;
     _lastCourse = null;
-    _lastChapter = null;
+    _lastChapters = const <Chapter>[];
+    _stopBatch = false;
+    batchTotal = 0;
+    batchDone = 0;
     logs.clear();
     droppedLogs = 0;
     progress = const TaskProgress(phase: TaskPhase.idle);
@@ -160,6 +324,7 @@ class RunController {
   void dispose() {
     _disposed = true;
     _session++;
+    _active = false;
     _runner?.requestStop();
     _stopSub?.cancel();
     _stopSub = null;
@@ -230,14 +395,16 @@ class RunController {
   }
 
   /// 执行结束：把通知改成最终结果再撤离前台，用户切回来之前也能看到结论。
-  Future<void> _finishKeeping(VideoRunnerResult result) async {
+  Future<void> _finishKeeping(TaskPhase phase) async {
     if (!_keeping) return;
     _keeping = false;
     _noticeBody = '';
     final TaskProgress p = progress;
-    final String body = p.total > 0 ? '已通过 ${p.done} / ${p.total}' : result.message;
+    final String body = batchMode
+        ? (p.message.isEmpty ? '已结束' : p.message)
+        : (p.total > 0 ? '已通过 ${p.done} / ${p.total}' : p.message);
     await _keeper.finish(
-      title: '${_phaseWord(result.phase)}：${chapterTitle.isEmpty ? '课程任务' : chapterTitle}',
+      title: '${_phaseWord(phase)}：${chapterTitle.isEmpty ? '课程任务' : chapterTitle}',
       body: body,
     );
   }
@@ -273,7 +440,7 @@ class RunController {
     _session++;
     _runner = null;
     _lastCourse = course;
-    _lastChapter = chapter;
+    _lastChapters = chapter == null ? const <Chapter>[] : <Chapter>[chapter];
     this.courseName = courseName;
     this.chapterTitle = chapterTitle;
     this.progress = progress;
@@ -285,4 +452,11 @@ class RunController {
     this.finishedAt = finishedAt;
     _onChanged();
   }
+}
+
+/// 批次内的章节分类：成功 / 无视频 / 有未通过任务点。
+class _BatchTally {
+  int ok = 0;
+  int empty = 0;
+  int failed = 0;
 }

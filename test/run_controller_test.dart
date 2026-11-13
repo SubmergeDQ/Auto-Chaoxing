@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:auto_chaoxing/core/models.dart';
 import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/platform/platform_services.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
@@ -149,6 +150,83 @@ void main() {
 
       expect(state.run.logs.length, lessThanOrEqualTo(RunController.maxLogs));
       expect(state.run.logs.length, RunController.maxLogs);
+    });
+  });
+
+  group('整门课批量执行', () {
+    test('按章节串行跑完，跳过无视频章节并给出汇总', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi()
+        ..pointsByChapter['510001'] = kDemoPoints
+        ..pointsByChapter['510002'] = const <TaskPoint>[]
+        ..pointsByChapter['510003'] = const <TaskPoint>[
+          TaskPoint(type: 'document', jobId: 'j-201', name: '讲义.pdf'),
+        ]
+        ..pointsByChapter['510004'] = kDemoPoints;
+      final AppState state = _stateWith(api);
+
+      await state.run.startCourse(course: kDemoCourses.first, chapters: kDemoChapters);
+
+      expect(state.run.phase, TaskPhase.succeeded);
+      expect(state.run.batchMode, isTrue);
+      expect(state.run.batchTotal, 4);
+      expect(state.run.batchDone, 4);
+      expect(api.cardsCalls, 4, reason: '四章都要读卡片');
+      expect(state.run.chapterTitle, '整门课（4 章）');
+      // 两章有视频，另外两章分别是「没有任务点」和「只有文档」。
+      expect(state.run.progress.message, contains('2 章完成'));
+      expect(state.run.progress.message, contains('2 章无视频跳过'));
+      expect(
+        state.run.logs.any((TaskLog l) => l.message.contains('第 4/4 章')),
+        isTrue,
+        reason: '日志里要能看出走到哪一章',
+      );
+    });
+
+    test('遇到需要人工的章节立即停止，不再进入下一章', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: kDemoPoints)
+        ..cardsErrorCode = 'locked';
+      final AppState state = _stateWith(api);
+
+      await state.run.startCourse(course: kDemoCourses.first, chapters: kDemoChapters);
+
+      expect(state.run.phase, TaskPhase.needsAttention);
+      expect(api.cardsCalls, 1, reason: '第一章就锁定，后续章节不再请求');
+      expect(state.run.batchDone, 1);
+      expect(state.run.progress.message, contains('第一章 函数与极限'));
+    });
+
+    test('中途停止后不再进入下一章', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: kDemoPoints)
+        ..reportGate = Completer<void>();
+      final AppState state = _stateWith(api);
+
+      final Future<void> running =
+          state.run.startCourse(course: kDemoCourses.first, chapters: kDemoChapters);
+      await _waitFor(() => api.reportCalls >= 1);
+
+      state.run.stop();
+      api.reportGate!.complete();
+      api.reportGate = null;
+      await running;
+
+      expect(state.run.phase, TaskPhase.stopped);
+      expect(api.cardsCalls, 1, reason: '停止后不该再读下一章的卡片');
+      expect(state.run.batchDone, 1);
+      expect(state.run.progress.message, contains('已处理 1 / 4 章'));
+    });
+
+    test('再次执行沿用整门课范围', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(points: kDemoPoints);
+      final AppState state = _stateWith(api);
+
+      await state.run.startCourse(course: kDemoCourses.first, chapters: kDemoChapters);
+      final int firstRound = api.cardsCalls;
+
+      await state.run.rerun();
+
+      expect(api.cardsCalls, firstRound * 2);
+      expect(state.run.batchTotal, 4);
+      expect(state.run.phase, TaskPhase.succeeded);
     });
   });
 

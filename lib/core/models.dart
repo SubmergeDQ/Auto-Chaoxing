@@ -139,6 +139,100 @@ class VideoStatus {
   final String dtoken;
 }
 
+/// 一条签到 / 签退活动（来自 activelist）。
+class SignActivity {
+  const SignActivity({
+    required this.activeId,
+    required this.name,
+    required this.type,
+    required this.status,
+    this.startAt,
+    this.endAt,
+    this.otherId = '',
+    this.ext = '',
+  });
+
+  final String activeId;
+  final String name;
+
+  /// 2 = 签到，74 = 签退。其余类型不归本客户端处理。
+  final int type;
+
+  /// 平台原样返回的状态值。语义未在真实账号上确认，界面只用时间窗判断。
+  final int status;
+
+  final DateTime? startAt;
+  final DateTime? endAt;
+
+  /// 活动所属的课程内对象 id（真实响应里可能是 otherId）。
+  final String otherId;
+
+  /// 会话数据，短时效；预签到必须当场带上，不能缓存复用。
+  final String ext;
+
+  bool get isSignIn => type == 2;
+
+  bool get isSignBack => type == 74;
+
+  /// 是否处在可签时间窗内。`endAt` 缺失时按「未知」处理，不当作可签。
+  bool isOpenAt(DateTime now) {
+    final DateTime? start = startAt;
+    final DateTime? end = endAt;
+    if (start == null || end == null) return false;
+    return !now.isBefore(start) && !now.isAfter(end);
+  }
+
+  /// 时间窗已过。用于把「还没开始」和「已经结束」分开，而不是都显示成「不可签」。
+  bool isExpiredAt(DateTime now) {
+    final DateTime? end = endAt;
+    return end != null && now.isAfter(end);
+  }
+}
+
+/// 一次签到的结果分类。UI 按它决定说「成功 / 已经签过 / 要人脸 / 要验证码」。
+enum SignOutcome {
+  success,
+  alreadySigned,
+  expired,
+  notStarted,
+  needFace,
+  needValidate,
+  needLocation,
+  error,
+}
+
+class SignAttempt {
+  const SignAttempt(this.outcome, {this.message = ''});
+
+  final SignOutcome outcome;
+  final String message;
+
+  bool get ok => outcome == SignOutcome.success || outcome == SignOutcome.alreadySigned;
+}
+
+/// 一条作业（来自 work/task-list）。
+class HomeworkItem {
+  const HomeworkItem({
+    required this.workId,
+    required this.name,
+    this.endAt,
+    this.completed,
+  });
+
+  final String workId;
+  final String name;
+  final DateTime? endAt;
+
+  /// 平台是否标记已交。null 表示响应里没给可识别的字段——
+  /// 不能当 false 用，界面会显示「状态未知」而不是「未交」。
+  final bool? completed;
+
+  bool get expired {
+    final DateTime? end = endAt;
+    return end != null && DateTime.now().isAfter(end);
+  }
+}
+
 /// 从 knowledge/cards 的 HTML 里抠出 mArg JSON。
 /// 页面结构：try{ ... mArg = {...}; }catch(e){ ... }
 Map<String, dynamic>? extractMarg(String html) {

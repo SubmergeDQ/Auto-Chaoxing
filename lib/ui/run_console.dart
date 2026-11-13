@@ -77,6 +77,61 @@ Future<void> startChapterRun(
   onOpenRun?.call();
 }
 
+/// 整门课的确认：范围按「章」讲，不再数任务点——章数多时那个数字没有感知。
+Future<void> startCourseRun(
+  BuildContext context,
+  AppState state, {
+  VoidCallback? onOpenRun,
+}) async {
+  final Course? course = state.selectedCourse;
+  final List<Chapter> chapters = state.chapters;
+  if (course == null || chapters.isEmpty || state.run.busy) return;
+
+  final bool? confirmed = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => AlertDialog(
+      backgroundColor: AcxColors.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AcxRadius.lg)),
+      title: const Text(
+        '开始执行整门课',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AcxColors.textPrimary),
+      ),
+      content: SizedBox(
+        width: 372,
+        child: Text(
+          '将依次处理「${course.name}」的全部 ${chapters.length} 章，\n'
+          '一章跑完再开始下一章。\n\n'
+          '没有视频任务点的章节会跳过；平台已通过的会跳过，\n'
+          '已看过的从中间继续。\n\n'
+          '遇到人脸抽检、验证码或登录失效会立即停止，\n'
+          '后面的章节不再执行。\n'
+          '耗时约等于全部视频总长，期间可以随时停止。',
+          style: const TextStyle(fontSize: 13, height: 1.7, color: AcxColors.textSecondary),
+        ),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(AcxSpacing.xl, 0, AcxSpacing.xl, AcxSpacing.xl),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('开始执行'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+
+  await state.runKeeper.ensureNotificationPermission();
+  if (!context.mounted) return;
+
+  unawaited(state.run.startCourse(course: course, chapters: chapters));
+  onOpenRun?.call();
+}
+
 class RunPage extends StatelessWidget {
   const RunPage({super.key, required this.state, this.onGoToCourses});
 
@@ -90,7 +145,7 @@ class RunPage extends StatelessWidget {
       return AcxEmptyState(
         icon: Icons.bolt_outlined,
         title: '还没有开始执行',
-        message: '到课程工作台展开章节，点「执行本章视频」。\n'
+        message: '到课程工作台展开章节点「执行本章视频」，或直接点章节面板上方的「执行整门课」。\n'
             '执行时这里会显示进度与日志；遇到人脸抽检、验证码或登录失效会立即停下。',
         action: onGoToCourses == null
             ? null
@@ -309,6 +364,12 @@ class _StatusCard extends StatelessWidget {
       return '在课程工作台展开章节后点「执行本章视频」，这里会接着显示进度。';
     }
     final StringBuffer buffer = StringBuffer(run.courseName);
+    // 批量执行时标题是「整门课（N 章）」，这里补上走到第几章；
+    // 单章模式的 batchMode 为 false，不会多出这一段。
+    if (run.batchMode) {
+      final int current = run.busy ? run.batchDone + 1 : run.batchDone;
+      buffer.write(' · 第 $current/${run.batchTotal} 章');
+    }
     final DateTime? started = run.startedAt;
     if (started != null) {
       final String start = _clock(started);

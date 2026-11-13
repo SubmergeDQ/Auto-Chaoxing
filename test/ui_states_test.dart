@@ -1,15 +1,20 @@
 import 'package:auto_chaoxing/core/models.dart';
 import 'package:auto_chaoxing/core/task_runner.dart';
 import 'package:auto_chaoxing/main.dart';
+import 'package:auto_chaoxing/platform/keep_alive_settings.dart';
 import 'package:auto_chaoxing/platform/platform_services.dart';
+import 'package:auto_chaoxing/platform/window_shell.dart';
 import 'package:auto_chaoxing/core/update/app_release.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:auto_chaoxing/state/keep_alive_probe.dart';
 import 'package:auto_chaoxing/state/update_state.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_api.dart';
+import 'support/fake_platform.dart';
 import 'support/fake_run_keeper.dart';
+import 'support/fake_session.dart';
 import 'support/fake_update.dart';
 
 /// 检查更新在 widget 测试里必须被挡住：既不该真去打 GitHub，
@@ -21,16 +26,24 @@ UpdateState noUpdateState() => UpdateState(
         read: () async => DateTime.now(),
         write: (DateTime _) async {},
       ),
-      currentVersion: '0.3.3',
+      currentVersion: '0.4.0',
       quitApp: () async {},
     );
 
 void main() {
-  AppState signedInState({List<Course> courses = kDemoCourses, RunKeeper? keeper}) {
+  AppState signedInState({
+    List<Course> courses = kDemoCourses,
+    RunKeeper? keeper,
+    KeepAliveSettings? keepAlive,
+    WindowShell? shell,
+  }) {
     final AppState state = AppState(
       api: FakeChaoxingApi(courses: courses),
       // 测试环境没有原生通道：显式用 Noop，避免多出一条「保活未启用」的告警干扰断言。
       runKeeper: keeper ?? const NoopRunKeeper(),
+      // 同上：Windows 上默认实现会去建托盘，测试里一律用 Noop。
+      keepAliveSettings: keepAlive ?? const NoopKeepAliveSettings(),
+      windowShell: shell ?? const NoopWindowShell(),
       update: noUpdateState(),
     );
     state.profile = const Profile(
@@ -44,16 +57,24 @@ void main() {
     return state;
   }
 
-  AppState courseSelectedState({List<TaskPoint> points = kDemoPoints}) {
+  AppState courseSelectedState({
+    List<TaskPoint> points = kDemoPoints,
+    RunKeeper? keeper,
+  }) {
+    final FakeChaoxingApi api = FakeChaoxingApi(
+      courses: kDemoCourses,
+      chapters: kDemoChapters,
+      points: points,
+    );
+    // 签到要用 api.profile 里的 uid/name/fid，真实环境登录后由 fetchProfile 写入。
+    api.profile = api.demoProfile;
     final AppState state = AppState(
-      api: FakeChaoxingApi(
-        courses: kDemoCourses,
-        chapters: kDemoChapters,
-        points: points,
-      ),
+      api: api,
       // 零延时，避免 Widget 测试等真实秒级节流。
       sleep: (Duration _) async {},
-      runKeeper: const NoopRunKeeper(),
+      runKeeper: keeper ?? const NoopRunKeeper(),
+      keepAliveSettings: const NoopKeepAliveSettings(),
+      windowShell: const NoopWindowShell(),
       update: noUpdateState(),
     );
     state.profile = const Profile(uid: '10086', name: '林知远', fid: '666');
@@ -167,12 +188,16 @@ void main() {
 
       await tester.tap(find.text('设置'));
       await tester.pump();
-      await tester.tap(find.text('关于'));
+      // 设置项变多后「关于」在 800x600 视口外，先滚到可见再点。
+      final Finder about = find.text('关于');
+      await tester.ensureVisible(about);
+      await tester.pump();
+      await tester.tap(about);
       await tester.pump();
 
       expect(find.text('Auto-Chaoxing'), findsOneWidget);
       expect(find.textContaining('github.com/SubmergeDQ/Auto-Chaoxing'), findsOneWidget);
-      expect(find.text('当前版本 v0.3.3'), findsOneWidget);
+      expect(find.text('当前版本 v0.4.0'), findsOneWidget);
       expect(find.text('检查更新'), findsOneWidget);
     });
 
@@ -228,6 +253,47 @@ void main() {
 
       expect(find.text('计时连续'), findsOneWidget);
       expect(find.text('未开始'), findsNothing, reason: '结果不该被重建抹掉');
+    });
+
+    testWidgets('保活页把通知与省电策略拆成两步，并就地申请权限', (WidgetTester tester) async {
+      final KeepAliveSettingsStub keepAlive = KeepAliveSettingsStub();
+      await tester.pumpWidget(AutoChaoxingApp(state: signedInState(keepAlive: keepAlive)));
+
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      await tester.tap(find.text('后台保活'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('通知栏常驻'), findsOneWidget);
+      expect(find.text('省电策略设为「无限制」'), findsOneWidget);
+      expect(find.text('未开启'), findsNWidgets(2));
+
+      await tester.tap(find.text('允许通知'));
+      await tester.pumpAndSettle();
+
+      expect(keepAlive.notificationRequests, 1);
+      expect(find.text('已开启'), findsOneWidget);
+      expect(find.text('未开启'), findsOneWidget);
+    });
+
+    testWidgets('窗口与托盘只在桌面端出现，改完立即落盘', (WidgetTester tester) async {
+      final WindowShellStub shell = WindowShellStub();
+      await tester.pumpWidget(AutoChaoxingApp(state: signedInState(shell: shell)));
+
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      final Finder entry = find.text('窗口与托盘');
+      await tester.ensureVisible(entry);
+      await tester.pump();
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('每次询问'), findsOneWidget);
+
+      await tester.tap(find.text('最小化到托盘'));
+      await tester.pumpAndSettle();
+
+      expect(shell.action, CloseAction.minimizeToTray);
     });
   });
 
@@ -333,6 +399,195 @@ void main() {
 
       expect(state.run.hasRun, isFalse);
       expect(find.text('开始执行本章视频'), findsNothing);
+    });
+
+    testWidgets('章节面板提供整门课入口，确认前不发起执行', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+      final FakeChaoxingApi api = state.api as FakeChaoxingApi;
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      // 窄屏测试视口：先选课程进入章节下钻页；整门课入口在面板头部，不需要展开章节。
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final Finder runAll = find.text('执行整门课');
+      expect(runAll, findsOneWidget);
+
+      await tester.tap(runAll);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('开始执行整门课'), findsOneWidget);
+      expect(find.textContaining('全部 4 章'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(state.run.hasRun, isFalse);
+      expect(api.cardsCalls, 0);
+    });
+
+    testWidgets('课程面板有签到入口，签到成功后标为已签到', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+      final FakeChaoxingApi api = state.api as FakeChaoxingApi;
+      final DateTime now = DateTime.now();
+      api.signActivities = <SignActivity>[
+        SignActivity(
+          activeId: 'a1',
+          name: '第 3 次课签到',
+          type: 2,
+          status: 1,
+          startAt: now.subtract(const Duration(minutes: 5)),
+          endAt: now.add(const Duration(minutes: 10)),
+        ),
+      ];
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final Finder signEntry = find.text('签到');
+      await tester.ensureVisible(signEntry);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(signEntry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('第 3 次课签到'), findsOneWidget);
+      expect(find.text('进行中'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, '签到'));
+      await tester.pumpAndSettle();
+
+      expect(api.signedActiveIds, <String>['a1']);
+      expect(find.text('已签到'), findsWidgets);
+      expect(find.text('进行中'), findsNothing);
+    });
+
+    testWidgets('没有签到活动时给出空态而不是空白页', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final Finder signEntry = find.text('签到');
+      await tester.ensureVisible(signEntry);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(signEntry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('这门课暂时没有签到活动'), findsOneWidget);
+      expect(find.text('刷新'), findsOneWidget);
+    });
+
+    testWidgets('支持保活的平台在签到页提供后台监听开关', (WidgetTester tester) async {
+      final RunKeeperStub keeper = RunKeeperStub();
+      final AppState state = courseSelectedState(keeper: keeper);
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final Finder signEntry = find.text('签到');
+      await tester.ensureVisible(signEntry);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(signEntry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('后台监听签到'), findsOneWidget);
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+
+      expect(keeper.beginCalls, 1);
+      expect(state.sign.watching, isTrue);
+
+      // 退出页面：监听保持，轮询不停。
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(state.sign.watching, isTrue);
+      expect(keeper.endCalls, 0);
+
+      // 测试收尾：停掉监听计时器，避免 pending timer 让用例失败。
+      state.sign.stopWatching();
+      await tester.pump();
+    });
+
+    testWidgets('课程面板有作业入口，列表区分已交与未交', (WidgetTester tester) async {
+      final AppState state = courseSelectedState();
+      final FakeChaoxingApi api = state.api as FakeChaoxingApi;
+      api.homeworks = <HomeworkItem>[
+        HomeworkItem(
+          workId: '1',
+          name: '第一章作业',
+          completed: true,
+          endAt: DateTime.now().add(const Duration(days: 3)),
+        ),
+        const HomeworkItem(workId: '2', name: '第二章作业', completed: false),
+        const HomeworkItem(workId: '3', name: '第三章作业'),
+      ];
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final Finder homeworkEntry = find.text('作业');
+      await tester.ensureVisible(homeworkEntry);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(homeworkEntry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('第一章作业'), findsOneWidget);
+      expect(find.text('已交'), findsOneWidget);
+      expect(find.text('未交'), findsOneWidget);
+      // 平台没给状态字段时显示「状态未知」，不能猜成未交。
+      expect(find.text('状态未知'), findsOneWidget);
+      expect(find.text('打开作答页'), findsNWidgets(3));
+
+      // 免责说明在列表底部，测试视口外，滚到底再看。
+      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('不代提交作业'), findsOneWidget);
+    });
+
+    testWidgets('设置页可以打开账号切换并列出本机账号', (WidgetTester tester) async {
+      final FakeSessionJar store = FakeSessionJar();
+      final FakeChaoxingApi api = FakeChaoxingApi()
+        ..profilesByUid['10086'] =
+            const Profile(uid: '10086', name: '林知远', fid: '666', school: '示例大学')
+        ..profilesByUid['20001'] =
+            const Profile(uid: '20001', name: '周敏', fid: '666', school: '另一所大学');
+      final AppState state = AppState(
+        api: api,
+        session: store,
+        sleep: (Duration _) async {},
+        runKeeper: const NoopRunKeeper(),
+        keepAliveSettings: const NoopKeepAliveSettings(),
+        windowShell: const NoopWindowShell(),
+        update: noUpdateState(),
+      );
+      await state.signIn('13800000000', 'pw-a');
+      api.loginProfile = api.profilesByUid['20001'];
+      await state.signIn('13900000000', 'pw-b');
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+
+      expect(find.text('切换账号'), findsOneWidget);
+      await tester.tap(find.text('切换账号'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('林知远'), findsOneWidget);
+      expect(find.text('周敏'), findsWidgets);
+      expect(find.text('当前'), findsOneWidget);
+
+      await tester.tap(find.text('关闭'));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('重跑前说明哪些已通过会跳过、哪些从中间继续', (WidgetTester tester) async {

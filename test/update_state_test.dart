@@ -20,6 +20,7 @@ void main() {
     FakeUpdateChecker checker, {
     FakeInstaller? installer,
     String version = '0.3.3',
+    Future<void> Function()? quitApp,
   }) {
     lastCheck = null;
     return UpdateState(
@@ -27,7 +28,7 @@ void main() {
       installer: installer ?? FakeInstaller(),
       throttle: throttle(),
       currentVersion: version,
-      quitApp: () async {},
+      quitApp: quitApp ?? () async {},
     );
   }
 
@@ -97,6 +98,38 @@ void main() {
       expect(installer.downloads, 1);
       expect(installer.installedPath, '/tmp/update.apk');
       expect(s.progress, 1.0);
+    });
+
+    test('安装前先停后台任务；Android 不主动退出', () async {
+      bool prepared = false;
+      bool quit = false;
+      final UpdateState s = stateWith(
+        FakeUpdateChecker(release: fakeRelease('v0.4.0')),
+        installer: FakeInstaller(platform: UpdatePlatform.android),
+        quitApp: () async => quit = true,
+      )..prepareUpgrade = () async => prepared = true;
+
+      await s.checkForUpdates(force: true);
+      await s.downloadAndInstall();
+
+      expect(prepared, isTrue);
+      expect(quit, isFalse, reason: 'Android 由系统在安装时结束进程');
+    });
+
+    test('Windows 自动安装在停完后台后退出进程', () async {
+      bool prepared = false;
+      bool quit = false;
+      final UpdateState s = stateWith(
+        FakeUpdateChecker(release: fakeRelease('v0.4.0')),
+        installer: FakeInstaller(platform: UpdatePlatform.windows),
+        quitApp: () async => quit = true,
+      )..prepareUpgrade = () async => prepared = true;
+
+      await s.checkForUpdates(force: true);
+      await s.downloadAndInstall();
+
+      expect(prepared, isTrue);
+      expect(quit, isTrue, reason: '不退出就覆盖不了正在运行的 exe');
     });
 
     test('没有安装权限时先引导授权，不下载', () async {

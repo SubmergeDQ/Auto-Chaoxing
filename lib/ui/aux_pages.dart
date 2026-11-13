@@ -9,20 +9,24 @@ import 'package:flutter/material.dart';
 
 import '../core/crypto.dart';
 import '../core/models.dart';
+import '../core/version.dart';
 import '../state/app_state.dart';
 import '../state/keep_alive_probe.dart';
 import '../state/update_state.dart';
+import 'account_switcher.dart';
 import 'courses_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
 /// 设置页能下钻的四个二级页。
-enum SettingsSubPage { selfCheck, constraints, privacy, about }
+enum SettingsSubPage { selfCheck, keepAlive, window, constraints, privacy, about }
 
 /// 二级页的标题与说明，由外壳读取后交给顶栏。
 ({String title, String subtitle}) describeSubPage(SettingsSubPage page) {
   return switch (page) {
     SettingsSubPage.selfCheck => (title: '协议自检', subtitle: '登录加密、进度签名与后台计时'),
+    SettingsSubPage.keepAlive => (title: '后台保活', subtitle: '通知、唤醒锁与省电策略'),
+    SettingsSubPage.window => (title: '窗口与托盘', subtitle: '关闭按钮的行为'),
     SettingsSubPage.constraints => (title: '运行约束', subtitle: '这个客户端会做与不会做的事'),
     SettingsSubPage.privacy => (title: '隐私与数据', subtitle: '哪些数据留在本机，怎么彻底删除'),
     SettingsSubPage.about => (title: '关于', subtitle: '版本、仓库地址与检查更新'),
@@ -69,6 +73,24 @@ class SettingsPage extends StatelessWidget {
                   detail: '登录加密、进度签名、熄屏计时',
                   onTap: () => onOpen(SettingsSubPage.selfCheck),
                 ),
+                if (state.keepAliveSettings.supported) ...<Widget>[
+                  const Divider(height: 1),
+                  _SettingsTile(
+                    icon: Icons.battery_saver_outlined,
+                    title: '后台保活',
+                    detail: '通知常驻、熄屏计时、省电策略',
+                    onTap: () => onOpen(SettingsSubPage.keepAlive),
+                  ),
+                ],
+                if (state.windowShell.supported) ...<Widget>[
+                  const Divider(height: 1),
+                  _SettingsTile(
+                    icon: Icons.desktop_windows_outlined,
+                    title: '窗口与托盘',
+                    detail: '关闭按钮的行为、托盘常驻',
+                    onTap: () => onOpen(SettingsSubPage.window),
+                  ),
+                ],
                 const Divider(height: 1),
                 _SettingsTile(
                   icon: Icons.linear_scale_rounded,
@@ -95,9 +117,9 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AcxSpacing.xxl),
-          const Text(
-            'Auto-Chaoxing · 客户端 v0.3.3',
-            style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textTertiary),
+          Text(
+            'Auto-Chaoxing · 客户端 $kAppVersionLabel',
+            style: const TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textTertiary),
           ),
         ],
       ),
@@ -173,14 +195,34 @@ class _AccountCard extends StatelessWidget {
           ),
           // 断开后留在设置页也要能就地重连，不必自己想到切回工作台。
           if (state.signedIn)
-            OutlinedButton(
-              onPressed: () => unawaited(state.signOut()),
-              child: const Text('断开连接'),
+            Wrap(
+              spacing: AcxSpacing.sm,
+              children: <Widget>[
+                if (state.canSwitchAccounts)
+                  OutlinedButton(
+                    onPressed: () => unawaited(showAccountSwitcher(context, state)),
+                    child: const Text('切换账号'),
+                  ),
+                TextButton(
+                  onPressed: () => unawaited(state.signOut()),
+                  child: const Text('断开连接'),
+                ),
+              ],
             )
           else if (!state.restoringSession)
-            FilledButton(
-              onPressed: () => unawaited(showLoginDialog(context, state)),
-              child: const Text('连接账号'),
+            Wrap(
+              spacing: AcxSpacing.sm,
+              children: <Widget>[
+                if (state.accounts.isNotEmpty)
+                  OutlinedButton(
+                    onPressed: () => unawaited(showAccountSwitcher(context, state)),
+                    child: const Text('选择账号'),
+                  ),
+                FilledButton(
+                  onPressed: () => unawaited(showLoginDialog(context, state)),
+                  child: const Text('连接账号'),
+                ),
+              ],
             ),
         ],
       ),
@@ -355,24 +397,28 @@ class PrivacyPage extends StatelessWidget {
                 _SettingRow(
                   icon: Icons.folder_outlined,
                   title: '会话存放',
-                  detail: '应用私有目录 session/，卸载时随应用一起删除',
+                  detail: '应用私有目录 session/<uid>/，每个账号独立；卸载时一起删除',
                 ),
               ],
             ),
           ),
           const SizedBox(height: AcxSpacing.lg),
           const Text(
-            '想立刻清空本机数据：点下面的「清除本机会话」，或在账号卡片上断开连接。'
-            '两者都会删掉 cookie 文件，下次打开需要重新登录。',
+            '想立刻清空本机数据：点下面的「清除全部账号会话」。'
+            '它会删掉所有账号的 cookie 文件与账号索引，下次打开需要重新登录。',
             style: TextStyle(fontSize: 12, height: 1.8, color: AcxColors.textSecondary),
           ),
           const SizedBox(height: AcxSpacing.lg),
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
-              onPressed: state.signedIn ? () => unawaited(state.signOut()) : null,
+              onPressed: state.signedIn || state.accounts.isNotEmpty
+                  ? () => unawaited(state.signOutAll())
+                  : null,
               icon: const Icon(Icons.delete_outline_rounded, size: 18),
-              label: Text(state.signedIn ? '清除本机会话' : '本机没有登录会话'),
+              label: Text(
+                state.signedIn || state.accounts.isNotEmpty ? '清除全部账号会话' : '本机没有登录会话',
+              ),
             ),
           ),
         ],

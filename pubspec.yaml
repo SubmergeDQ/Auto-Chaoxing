@@ -1,7 +1,7 @@
 name: auto_chaoxing
 description: 跨平台（Android / Windows）学习通课程自动化客户端
 publish_to: "none"
-version: 0.3.3+6
+version: 0.4.0+13
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -24,6 +24,8 @@ dependencies:
   path_provider: ^2.1.6
   intl: ^0.20.3
   url_launcher: ^6.3.3
+  window_manager: ^0.6.0
+  tray_manager: ^0.8.3
   # 平台能力（按需启用，未启用前不影响编译）
   # flutter_foreground_task: any      # Android 前台服务
   # flutter_inappwebview: any         # Android 登录/作业提交
@@ -38,3 +40,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # 托盘图标（运行时从 asset 落到临时文件，tray_manager 只认真实路径）
+    - assets/tray.ico

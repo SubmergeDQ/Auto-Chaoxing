@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/models.dart';
 import '../core/update/app_release.dart';
+import '../core/update/update_script.dart';
 
 /// 安装结果。manual 表示只能给用户路径、让他自己来（例如只发布了 zip）。
 enum InstallMode { automated, manual }
@@ -174,12 +175,7 @@ class WindowsUpdateInstaller implements UpdateInstaller {
 
   @override
   Future<Result<InstallResult>> install(String path) async {
-    if (path.toLowerCase().endsWith('.zip')) {
-      // 只发了压缩包：不替用户解压覆盖正在运行的程序，给出路径让他自己来。
-      return Ok<InstallResult>(
-        InstallResult(InstallMode.manual, '已下载到 $path，退出应用后解压覆盖即可'),
-      );
-    }
+    if (path.toLowerCase().endsWith('.zip')) return _applyZip(path);
     try {
       await Process.start(path, const <String>[], mode: ProcessStartMode.detached);
       return const Ok<InstallResult>(
@@ -188,6 +184,94 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     } on Exception catch (e) {
       return Err<InstallResult>('install', '没能启动安装程序：$e');
     }
+  }
+
+  /// zip 更新：解压到临时目录 → 写覆盖脚本 → 启动脚本 → 由调用方退出应用。
+  ///
+  /// 三处保护：
+  ///   1) 安装目录不可写（例如装在 Program Files）就退回手动，不假装成功；
+  ///   2) 解压后先确认包里有主程序，避免把结构不对的包覆盖进去；
+  ///   3) 脚本覆盖前备份主 exe，覆盖失败时至少还能启动旧版本。
+  Future<Result<InstallResult>> _applyZip(String zipPath) async {
+    final String appDir = File(Platform.resolvedExecutable).parent.path;
+    final String exeName = Platform.resolvedExecutable.split(Platform.pathSeparator).last;
+
+    if (!await canWriteToDirectory(appDir)) {
+      return Ok<InstallResult>(
+        InstallResult(
+          InstallMode.manual,
+          '已下载到 $zipPath；当前安装目录不可写，退出应用后手动解压覆盖',
+        ),
+      );
+    }
+
+    final Directory temp = await getTemporaryDirectory();
+    final Directory staging = Directory(
+      '${temp.path}${Platform.pathSeparator}acx_update_'
+      '${DateTime.now().millisecondsSinceEpoch}',
+    );
+    try {
+      await staging.create(recursive: true);
+      final ProcessResult r = await Process.run('powershell', <String>[
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        "Expand-Archive -LiteralPath '${_psQuote(zipPath)}' "
+            "-DestinationPath '${_psQuote(staging.path)}' -Force",
+      ]);
+      if (r.exitCode != 0) {
+        return Err<InstallResult>('install', '解压更新包失败：${r.stderr}');
+      }
+      if (!File('${staging.path}${Platform.pathSeparator}$exeName').existsSync()) {
+        return Err<InstallResult>('install', '更新包结构不对：没有找到 $exeName');
+      }
+
+      final File script = File('${temp.path}${Platform.pathSeparator}acx_apply_update.ps1');
+      await script.writeAsString(
+        buildWindowsApplyScript(
+          pid: pid,
+          stagingDir: staging.path,
+          appDir: appDir,
+          exeName: exeName,
+        ),
+        flush: true,
+      );
+      await Process.start(
+        'powershell',
+        <String>[
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-WindowStyle',
+          'Hidden',
+          '-File',
+          script.path,
+        ],
+        mode: ProcessStartMode.detached,
+      );
+      return const Ok<InstallResult>(
+        InstallResult(InstallMode.automated, '更新包已就绪：应用将退出，随后自动覆盖并重启'),
+      );
+    } on Exception catch (e) {
+      return Err<InstallResult>('install', '准备更新失败：$e');
+    }
+  }
+}
+
+String _psQuote(String value) => value.replaceAll("'", "''");
+
+/// 目录是否可写。安装在 Program Files 时普通用户没有写权限，
+/// 这种情况只能走手动解压，不能假装自动更新成功。
+Future<bool> canWriteToDirectory(String path) async {
+  try {
+    final File probe = File('$path${Platform.pathSeparator}.acx_write_probe');
+    await probe.writeAsString('probe', flush: true);
+    await probe.delete();
+    return true;
+  } on FileSystemException {
+    return false;
   }
 }
 

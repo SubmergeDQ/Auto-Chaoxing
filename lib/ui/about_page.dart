@@ -286,7 +286,8 @@ class _UpdateCard extends StatelessWidget {
             const SizedBox(height: AcxSpacing.md),
             const Text(
               'Android：系统安装界面会盖在应用上，按提示覆盖安装即可。'
-              'Windows：安装程序已启动，本应用会退出以便替换文件。',
+              'Windows：更新包就绪后应用会自动退出并重启替换；'
+              '安装目录不可写时会给出路径，需要手动解压覆盖。',
               style: TextStyle(fontSize: 12, height: 1.7, color: AcxColors.textTertiary),
             ),
           ],

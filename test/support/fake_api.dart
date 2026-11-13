@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:auto_chaoxing/core/chaoxing_api.dart';
 import 'package:auto_chaoxing/core/models.dart';
+import 'package:cookie_jar/cookie_jar.dart';
 
 class FakeChaoxingApi extends ChaoxingApi {
   FakeChaoxingApi({
@@ -16,6 +17,8 @@ class FakeChaoxingApi extends ChaoxingApi {
     this.coursesError,
     this.chaptersError,
     this.cardsErrorCode,
+    this.signActivities = const <SignActivity>[],
+    this.homeworks = const <HomeworkItem>[],
   }) : demoProfile = profile ??
             const Profile(
               uid: '10086',
@@ -34,11 +37,21 @@ class FakeChaoxingApi extends ChaoxingApi {
   String? chaptersError;
   String? cardsErrorCode;
 
+  /// 按章节指定任务点；没配的章节沿用 [points]。
+  /// 整门课批量执行的测试靠它造出「有的章有视频、有的章没有」。
+  final Map<String, List<TaskPoint>> pointsByChapter = <String, List<TaskPoint>>{};
+
   /// 视频总时长（秒）。默认 120，按 60 秒步长每个任务点上报 3 次。
   int videoSeconds = 120;
 
   /// 这些 objectId 对应的任务点永远判为未通过，用来覆盖失败分支。
   final Set<String> neverPass = <String>{};
+
+  /// 登录返回的资料；多账号测试里切到第二个账号前改它。
+  Profile? loginProfile;
+
+  /// 按 uid 返回资料，用于验证「切换账号后拿到的是那个账号的信息」。
+  final Map<String, Profile> profilesByUid = <String, Profile>{};
 
   /// 设置后，第一次上报会挂起，测试可在运行中调用停止。
   Completer<void>? reportGate;
@@ -53,6 +66,25 @@ class FakeChaoxingApi extends ChaoxingApi {
   int cardsCalls = 0;
   int reportCalls = 0;
   int statusCalls = 0;
+  int signActivitiesCalls = 0;
+  int signCalls = 0;
+
+  /// 签到活动列表；按需在用例里替换。
+  List<SignActivity> signActivities = const <SignActivity>[];
+
+  /// 设置后 activelist 返回错误，用来覆盖签到页的错误态。
+  String? signActivitiesError;
+
+  /// 每次签到返回的结果，默认成功。改成 needFace 等可覆盖提示分支。
+  SignAttempt signAttempt = const SignAttempt(SignOutcome.success, message: '签到成功');
+
+  /// 已成功发起过的签到，用来断言幂等没有重复提交。
+  final List<String> signedActiveIds = <String>[];
+
+  /// 作业列表与错误。
+  List<HomeworkItem> homeworks = const <HomeworkItem>[];
+  String? homeworksError;
+  int homeworksCalls = 0;
 
   /// 每次上报的 playingTime，按调用顺序记录，用来断言续跑起点。
   final List<int> reportedTimes = <int>[];
@@ -61,11 +93,37 @@ class FakeChaoxingApi extends ChaoxingApi {
   Future<Result<Profile>> login(String username, String password) async {
     loginCalls++;
     if (loginError != null) return Err<Profile>(loginErrorCode, loginError!);
-    return Ok<Profile>(demoProfile);
+    final Profile p = loginProfile ?? demoProfile;
+    // 真实登录会下发 `_uid`；多账号切换靠它认出当前是哪个账号。
+    try {
+      await cookieJar.saveFromResponse(
+        Uri.parse('https://chaoxing.com'),
+        <Cookie>[Cookie('_uid', p.uid)..domain = '.chaoxing.com'..path = '/'],
+      );
+    } catch (_) {
+      // 内存模式没有落盘能力，忽略。
+    }
+    profile = p;
+    return Ok<Profile>(p);
   }
 
   @override
   Future<Result<Profile>> fetchProfile() async {
+    try {
+      final List<Cookie> cookies =
+          await cookieJar.loadForRequest(Uri.parse('https://chaoxing.com'));
+      for (final Cookie c in cookies) {
+        if (c.name != '_uid') continue;
+        final Profile? p = profilesByUid[c.value];
+        if (p != null) {
+          profile = p;
+          return Ok<Profile>(p);
+        }
+      }
+    } catch (_) {
+      // 读不到就按默认账号处理。
+    }
+    profile = demoProfile;
     return Ok<Profile>(demoProfile);
   }
 
@@ -108,9 +166,42 @@ class FakeChaoxingApi extends ChaoxingApi {
         reportUrl: 'https://mooc1.chaoxing.com/multimedia/log',
         fid: '666',
         userId: demoProfile.uid,
-        points: points,
+        points: pointsByChapter[chapterId] ?? points,
       ),
     );
+  }
+
+  @override
+  Future<Result<List<SignActivity>>> fetchSignActivities({
+    required Course course,
+  }) async {
+    signActivitiesCalls++;
+    final String? error = signActivitiesError;
+    if (error != null) return Err<List<SignActivity>>('network', error);
+    return Ok<List<SignActivity>>(signActivities);
+  }
+
+  @override
+  Future<Result<SignAttempt>> signIn({
+    required Course course,
+    required SignActivity activity,
+    required String uid,
+    required String name,
+    required String fid,
+  }) async {
+    signCalls++;
+    if (signAttempt.ok) signedActiveIds.add(activity.activeId);
+    return Ok<SignAttempt>(signAttempt);
+  }
+
+  @override
+  Future<Result<List<HomeworkItem>>> fetchHomeworks({
+    required Course course,
+  }) async {
+    homeworksCalls++;
+    final String? error = homeworksError;
+    if (error != null) return Err<List<HomeworkItem>>('network', error);
+    return Ok<List<HomeworkItem>>(homeworks);
   }
 
   @override
