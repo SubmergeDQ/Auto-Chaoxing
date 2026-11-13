@@ -17,6 +17,10 @@ jobs:
           # 固定版本：stable 漂移会抬高 AGP 最低要求，导致「本机能编、CI 不能编」。
           flutter-version: '3.47.9'
           cache: true
+      # window_manager / tray_manager 依赖的 cnativeapi 会在 host 上构建 native assets，
+      # 其 hook 需要 pkg-config 找到 GTK/X11；缺包会让 flutter test 直接失败。
+      - name: Install Linux native asset deps
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libx11-dev libxi-dev
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test --reporter expanded
