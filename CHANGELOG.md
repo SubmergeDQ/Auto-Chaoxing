@@ -1,9 +1,11 @@
 # CHANGELOG
 
-## 0.4.3 — 2026-11-16
+## 0.4.4 — 2026-11-16
 
-接替未能发布的 0.4.2：release 工作流的 publish job 缺少 checkout，
-发布说明读不到 CHANGELOG；本版补齐并改为从 CHANGELOG 提取正文。
+接替未能发布的 0.4.2 / 0.4.3：release 工作流的 publish job 缺少 checkout，
+发布说明读不到 CHANGELOG；安装器编译失败还会把整个 Release 拖垮。
+本版补齐 checkout，并把安装器降级为可选产物：编译失败时仍发布 zip，
+应用内更新会自动回退到 zip。
 
 登录后能正常看到章节了：旧的章节页面已经下线，改走移动端接口。
 

@@ -207,8 +207,9 @@ flutter test test/visual_capture.dart --update-goldens
 - [x] 0.4.0：两端检查更新收尾（安装前停后台、Windows 真正退出）与 Windows 单实例
 - [x] 0.4.1：新应用图标（品牌色播放三角 + 进度条），Android / Windows / 托盘统一；
   顶栏右上角头像 + 昵称（学习通真实头像，点击进设置）
-- [x] 0.4.3：章节列表改走移动端 `gas/clazz`，修复登录后卡在「正在读取章节」；
-  兼容新版 cards 无 `job` 字段的任务点判定；release 发布说明改从 CHANGELOG 提取
+- [x] 0.4.4：章节列表改走移动端 `gas/clazz`，修复登录后卡在「正在读取章节」；
+  兼容新版 cards 无 `job` 字段的任务点判定；release 说明改从 CHANGELOG 提取，
+  安装器编译失败时仍发布 zip
 - [ ] 文档 / 阅读任务点（停留上报，需真实课程实测）
 - [ ] 章节测验与作业作答（题目解析、题库、提交字段均待实测）
 - [ ] 考试提醒（列表接口仍需实测字段）
