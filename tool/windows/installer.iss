@@ -1,4 +1,4 @@
-; Inno Setup 6 安装器定义。
+﻿; Inno Setup 6 安装器定义。
 ;
 ; 安装位置可选：默认优先非系统盘（D–Z 中第一个存在的盘，<盘>:\Auto-Chaoxing），
 ; 没有可用盘才退回用户目录。登录会话与设置写在 <安装目录>\userdata\，
@@ -43,7 +43,9 @@ RestartApplications=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
-Name: "chs"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 语言文件随仓库提供：Inno Setup 6.5+ 的安装包不再自带非英文翻译，
+; 依赖 compiler:Languages 路径会让 CI 编译直接失败。
+Name: "chs"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务"; Flags: unchecked
