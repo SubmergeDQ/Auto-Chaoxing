@@ -1,7 +1,7 @@
 name: auto_chaoxing
 description: 跨平台（Android / Windows）学习通课程自动化客户端
 publish_to: "none"
-version: 0.4.5+18
+version: 0.4.6+19
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -21,6 +21,8 @@ dependencies:
   # 它的 Windows 实现依赖 ATL（atlstr.h），会让本机 MSVC 构建直接失败，
   # 而我们根本用不到那个能力，不如不引入。
   shared_preferences: ^2.5.6
+  # Windows 发布版把偏好文件改存到安装目录的 userdata/，需要替换平台实现。
+  shared_preferences_platform_interface: ^2.4.2
   path_provider: ^2.1.6
   intl: ^0.20.3
   url_launcher: ^6.3.3

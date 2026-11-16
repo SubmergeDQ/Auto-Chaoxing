@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 import 'core/chaoxing_api.dart';
+import 'platform/app_paths.dart';
+import 'platform/install_prefs.dart';
 import 'platform/session_store.dart';
 import 'state/app_state.dart';
 import 'ui/app_shell.dart';
@@ -9,7 +14,14 @@ import 'ui/theme.dart';
 Future<void> main() async {
   // 会话要落盘，起 App 前先把存储准备好（读一个目录，毫秒级）。
   WidgetsFlutterBinding.ensureInitialized();
-  final SessionJar session = await SessionJar.open();
+  // Windows 发布版把数据放在安装目录的 userdata/ 下；其它情况返回 null，沿用系统目录。
+  final Directory? dataDir = await resolveInstallDataDir();
+  if (dataDir != null) {
+    SharedPreferencesStorePlatform.instance = InstallDirPreferencesStore(
+      File('${dataDir.path}${Platform.pathSeparator}shared_preferences.json'),
+    );
+  }
+  final SessionJar session = await SessionJar.open(overrideDir: dataDir?.path);
   runApp(AutoChaoxingApp(
     api: ChaoxingApi(cookieJar: session.jar),
     session: session,

@@ -19,7 +19,10 @@ import 'dart:io';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// 会话文件目录名。放在 application support 下，不写公共目录。
+/// 会话文件目录名。放在应用数据根目录下，不写公共目录。
+///
+/// Windows 发布版的根目录是 `<安装目录>\userdata`（由 main 传入），
+/// 其它平台沿用 application support。
 const String kSessionDirName = 'session';
 
 const String _kAccountsFile = 'accounts.json';

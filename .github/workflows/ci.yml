@@ -60,11 +60,17 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release
-      # 发布约定要求产物是 *windows*.zip，CI 顺手打出来，免得每次手动压。
-      - name: Package windows zip
+      # 安装器是主要分发形态：CI 也编译一次，产物可直接下载安装。
+      - name: Install Inno Setup
         shell: pwsh
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tool/package_windows.ps1 -SkipBuild
+        run: choco install innosetup --no-progress -y
+      # 发布约定要求产物是 *windows*.zip，CI 顺手打出来，免得每次手动压。
+      - name: Package windows zip and installer
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tool/package_windows.ps1 -SkipBuild -Installer
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.exe
