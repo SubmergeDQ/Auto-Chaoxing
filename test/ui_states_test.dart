@@ -1,5 +1,6 @@
 import 'package:auto_chaoxing/core/models.dart';
 import 'package:auto_chaoxing/core/task_runner.dart';
+import 'package:auto_chaoxing/core/version.dart';
 import 'package:auto_chaoxing/main.dart';
 import 'package:auto_chaoxing/platform/keep_alive_settings.dart';
 import 'package:auto_chaoxing/platform/platform_services.dart';
@@ -197,7 +198,7 @@ void main() {
 
       expect(find.text('Auto-Chaoxing'), findsOneWidget);
       expect(find.textContaining('github.com/SubmergeDQ/Auto-Chaoxing'), findsOneWidget);
-      expect(find.text('当前版本 v0.4.1'), findsOneWidget);
+      expect(find.text('当前版本 $kAppVersionLabel'), findsOneWidget);
       expect(find.text('检查更新'), findsOneWidget);
     });
 
