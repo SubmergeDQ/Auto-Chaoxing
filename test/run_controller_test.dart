@@ -174,7 +174,7 @@ void main() {
       expect(state.run.chapterTitle, '整门课（4 章）');
       // 两章有视频，另外两章分别是「没有任务点」和「只有文档」。
       expect(state.run.progress.message, contains('2 章完成'));
-      expect(state.run.progress.message, contains('2 章无视频跳过'));
+      expect(state.run.progress.message, contains('2 章无可执行任务点跳过'));
       expect(
         state.run.logs.any((TaskLog l) => l.message.contains('第 4/4 章')),
         isTrue,

@@ -189,17 +189,25 @@ class _ChapterLoadingView extends StatefulWidget {
 
 class _ChapterLoadingViewState extends State<_ChapterLoadingView> {
   int _seconds = 0;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    Timer.periodic(const Duration(seconds: 1), (Timer t) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
       if (!mounted) {
         t.cancel();
         return;
       }
       setState(() => _seconds++);
     });
+  }
+
+  @override
+  void dispose() {
+    // widget 测试会在帧间销毁树：不在这里取消会留下 pending timer 直接判失败。
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
