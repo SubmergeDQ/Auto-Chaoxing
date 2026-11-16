@@ -21,6 +21,13 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+# 把关键错误写进 GitHub Actions 的步骤摘要：发布失败时不用登录看日志也能定位。
+function Write-StepSummary([string]$text) {
+  if ($env:GITHUB_STEP_SUMMARY) {
+    $text | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+  }
+}
+
 # 版本号从 pubspec 读，避免产物名和 tag / 应用内版本对不上。
 $match = Select-String -Path 'pubspec.yaml' -Pattern '^version:\s*([0-9]+\.[0-9]+\.[0-9]+)' |
   Select-Object -First 1
@@ -41,10 +48,14 @@ $zip = Join-Path 'dist' "$name.zip"
 
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
-Copy-Item -Path (Join-Path $release '*') -Destination $dist -Recurse -Force
-
-if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $dist '*') -DestinationPath $zip -CompressionLevel Optimal
+try {
+  Copy-Item -Path (Join-Path $release '*') -Destination $dist -Recurse -Force
+  if (Test-Path $zip) { Remove-Item $zip -Force }
+  Compress-Archive -Path (Join-Path $dist '*') -DestinationPath $zip -CompressionLevel Optimal
+} catch {
+  Write-StepSummary "### Windows zip 打包失败`n`n$($_.Exception.Message)"
+  throw
+}
 
 $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Host "已生成 $zip ($size MB)"
@@ -64,9 +75,16 @@ if ($Installer) {
   }
   if (-not $isccPath) {
     Write-Warning '未找到 Inno Setup 6（ISCC.exe），跳过安装器；zip 仍可直接分发。'
+    Write-StepSummary '### 未找到 Inno Setup`n`n本次只发布 zip，应用内更新会回退到 zip。'
   } else {
-    & $isccPath "/DMyAppVersion=$version" 'tool\windows\installer.iss'
-    if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败：$LASTEXITCODE" }
-    Write-Host "已生成 dist\auto-chaoxing-setup-$version.exe"
+    try {
+      & $isccPath "/DMyAppVersion=$version" 'tool\windows\installer.iss'
+      if ($LASTEXITCODE -ne 0) { throw "ISCC 退出码 $LASTEXITCODE" }
+      Write-Host "已生成 dist\auto-chaoxing-setup-$version.exe"
+    } catch {
+      # 安装器是可选的发布形态：编译失败不能把 zip 和整个 Release 一起拖垮。
+      Write-Warning "Inno Setup 编译失败，本次只发布 zip：$($_.Exception.Message)"
+      Write-StepSummary "### Inno Setup 编译失败`n`n$($_.Exception.Message)`n`n本次只发布 zip，应用内更新会回退到 zip。"
+    }
   }
 }
