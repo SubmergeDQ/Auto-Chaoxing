@@ -171,6 +171,35 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });
+
+    testWidgets('窄屏章节页在读取失败后会切到错误态', (WidgetTester tester) async {
+      // 回归：窄屏章节页是压栈页面，不在 AppShell 的监听里；
+      // 不自己监听 AppState 的话，失败后页面会一直停在「正在读取章节…」。
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        courses: kDemoCourses,
+        chapters: kDemoChapters,
+      )..chaptersError = '网络超时，请检查网络后重试';
+      final AppState state = AppState(
+        api: api,
+        sleep: (Duration _) async {},
+        runKeeper: const NoopRunKeeper(),
+        keepAliveSettings: const NoopKeepAliveSettings(),
+        windowShell: const NoopWindowShell(),
+        update: noUpdateState(),
+      );
+      state.profile = const Profile(uid: '10086', name: '林知远', fid: '666');
+      state.coursesState = LoadState.ready;
+      state.courses = kDemoCourses;
+
+      await tester.pumpWidget(AutoChaoxingApp(state: state));
+      await tester.tap(find.text('高等数学（上）'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('章节读取失败'), findsOneWidget);
+      expect(find.text('网络超时，请检查网络后重试'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
+    });
   });
 
   group('辅助页面', () {

@@ -63,16 +63,24 @@ class ChapterDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Course? course = state.selectedCourse;
-    return Scaffold(
-      appBar: AppBar(title: Text(course?.name ?? '章节')),
-      body: course == null
-          ? const AcxEmptyState(
-              icon: Icons.account_tree_outlined,
-              title: '课程信息已失效',
-              message: '返回课程列表重新选择一门课程。',
-            )
-          : _ChapterContent(state: state, course: course, onOpenRun: onOpenRun),
+    // 窄屏的章节页是 Navigator 压栈出来的，不在 AppShell 的 AnimatedBuilder 里。
+    // 不自己监听 AppState 的话，请求失败后 chaptersState 变了页面也不会重建，
+    // 会一直停在「正在读取章节…」——宽屏右栏没这个问题。
+    return AnimatedBuilder(
+      animation: state,
+      builder: (BuildContext context, Widget? _) {
+        final Course? course = state.selectedCourse;
+        return Scaffold(
+          appBar: AppBar(title: Text(course?.name ?? '章节')),
+          body: course == null
+              ? const AcxEmptyState(
+                  icon: Icons.account_tree_outlined,
+                  title: '课程信息已失效',
+                  message: '返回课程列表重新选择一门课程。',
+                )
+              : _ChapterContent(state: state, course: course, onOpenRun: onOpenRun),
+        );
+      },
     );
   }
 }
