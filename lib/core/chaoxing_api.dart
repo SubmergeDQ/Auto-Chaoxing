@@ -12,9 +12,13 @@ import 'homework_rules.dart';
 import 'models.dart';
 import 'sign_rules.dart';
 
+/// gas 接口按 UA 放行：缺少 `com.chaoxing.mobile/ChaoXingStudy…` 这一段会直接 403，
+/// 普通 Chrome 移动端 UA 也不例外。其余字段保持真实机型，避免风控把会话判成异常设备。
 const String kMobileUa =
-    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+    'Mozilla/5.0 (Linux; Android 11; MI10 Build/QKQ1.190929.002; wv) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/79.0.3945.116 '
+    'Mobile Safari/537.36 (device:MI10) Language/zh_CN '
+    'com.chaoxing.mobile/ChaoXingStudy_3_6.7.5_android_phone_10941_314';
 
 /// 登录失效的判定特征串。响应是 HTML 时先过一遍这个，再谈解析。
 const List<String> _authExpiredMarkers = <String>[
@@ -242,8 +246,10 @@ class ChaoxingApi {
     }
   }
 
-  /// 章节列表：从学生课程页 HTML 里提取 chapterId 与标题。
-  /// 与 core/chaoxing_core.py 的 chapters() 同一套规则。
+  /// 章节树：移动端 gas 接口返回课程的知识节点。
+  ///
+  /// 旧的 `mycourse/studentcourse` 页面现在会 302 到登录跳板，已不能取章节。
+  /// gas 接口要求 `personid` 传课程列表里的 cpi，并把 classId 放在 `id`。
   Future<Result<List<Chapter>>> fetchChapters({
     required String courseId,
     required String classId,
@@ -251,42 +257,48 @@ class ChaoxingApi {
   }) async {
     try {
       final Response<String> resp = await _dio.get<String>(
-        'https://mooc1.chaoxing.com/mycourse/studentcourse',
+        'https://mooc1-api.chaoxing.com/gas/clazz',
         queryParameters: <String, dynamic>{
-          'courseId': courseId,
-          'clazzid': classId,
-          'forcedJoin': '1',
-          'knowledgeid': '0',
-          'ut': 's',
-          'cpi': cpi,
+          'id': classId,
+          'personid': cpi,
+          'fields': _chapterFields,
+          'view': 'json',
         },
         options: Options(
-          headers: <String, dynamic>{'Referer': 'https://i.chaoxing.com'},
+          headers: <String, dynamic>{'Referer': 'http://i.mooc.chaoxing.com'},
         ),
       );
-      final String html = resp.data ?? '';
-      if (_looksLikeLogin(html)) {
+      final String body = resp.data ?? '';
+      if (_looksLikeLogin(body)) {
         return const Err<List<Chapter>>('authExpired', '登录已失效');
       }
-      final List<Chapter> out = <Chapter>[];
-      final Set<String> seen = <String>{};
-      final RegExp titled = RegExp(
-        r'chapterId=(\d+)[^>]*>\s*(?:<[^>]+>\s*)*([^<]{1,60})',
-      );
-      for (final RegExpMatch m in titled.allMatches(html)) {
-        final String id = m.group(1) ?? '';
-        final String title = (m.group(2) ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
-        if (id.isEmpty || !seen.add(id)) continue;
-        out.add(Chapter(chapterId: id, title: title.isEmpty ? '章节 $id' : title));
+      final Map<String, dynamic>? json = _tryJson(body);
+      if (json == null) {
+        return Err<List<Chapter>>(
+          'parse',
+          resp.statusCode == 200 ? '章节列表无法解析' : '章节接口返回异常（${resp.statusCode}）',
+        );
       }
-      if (out.isEmpty) {
-        // mooc2 折叠结构里标题和 anchor 不同行，退化为只取 id。
-        for (final RegExpMatch m in RegExp(r'chapterId=(\d+)').allMatches(html)) {
-          final String id = m.group(1) ?? '';
-          if (id.isNotEmpty && seen.add(id)) {
-            out.add(Chapter(chapterId: id, title: '章节 $id'));
-          }
-        }
+      final List<Map<String, dynamic>> nodes = _chapterNodes(json);
+      if (nodes.isEmpty) {
+        return const Err<List<Chapter>>('parse', '章节列表为空');
+      }
+      // 顶层章通常只是分组，任务点挂在子节点上；只保留叶子节点，
+      // 没有子节点的顶层章本身就是可执行节点，也要保留。
+      final Set<String> parents = <String>{};
+      for (final Map<String, dynamic> n in nodes) {
+        final String pid = '${n['parentnodeid'] ?? ''}';
+        if (pid.isNotEmpty && pid != '0') parents.add(pid);
+      }
+      final List<Map<String, dynamic>> leaves = nodes
+          .where((Map<String, dynamic> n) => !parents.contains('${n['id'] ?? ''}'))
+          .toList()
+        ..sort(_compareChapterNode);
+      final List<Chapter> out = <Chapter>[];
+      for (final Map<String, dynamic> n in leaves) {
+        final String id = '${n['id'] ?? ''}';
+        if (!_isDigits(id)) continue;
+        out.add(Chapter(chapterId: id, title: _chapterTitle(n)));
       }
       return Ok<List<Chapter>>(out);
     } on DioException catch (e) {
@@ -332,9 +344,9 @@ class ChaoxingApi {
       final List<TaskPoint> points = <TaskPoint>[];
       for (final dynamic raw in (marg['attachments'] ?? <dynamic>[]) as List<dynamic>) {
         final Map<String, dynamic> att = (raw as Map).cast<String, dynamic>();
-        if (att['job'] != true) continue;
         final Map<String, dynamic> prop =
             (att['property'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+        if (!_isTaskPoint(att, prop)) continue;
         points.add(
           TaskPoint(
             type: '${att['type'] ?? ''}',
@@ -646,6 +658,86 @@ class ChaoxingApi {
       _authExpiredMarkers.any((String m) => body.contains(m));
 
   static bool _isDigits(String s) => s.isNotEmpty && int.tryParse(s) != null;
+
+  /// gas/clazz 的 fields：只取章节树需要的字段，避免整包响应过大。
+  static const String _chapterFields =
+      'id,bbsid,classscore,isstart,allowdownload,chatid,name,state,isfiled,'
+      'visiblescore,hideclazz,begindate,forbidintoclazz,'
+      'coursesetting.fields(id,courseid,hiddencoursecover,coursefacecheck),'
+      'course.fields(id,belongschoolid,name,infocontent,objectid,app,'
+      'bulletformat,mappingcourseid,imageurl,teacherfactor,jobcount,'
+      'knowledge.fields(id,name,indexOrder,parentnodeid,status,isReview,'
+      'layer,label,jobcount,begintime,endtime,'
+      'attachment.fields(id,type,objectid,extension).type(video)))';
+
+  /// 从 gas/clazz 的固定层级里取出 knowledge 节点：data[0].course.data[0].knowledge.data。
+  static List<Map<String, dynamic>> _chapterNodes(Map<String, dynamic> json) {
+    final dynamic data = json['data'];
+    if (data is! List || data.isEmpty) return const <Map<String, dynamic>>[];
+    final dynamic clazz = data.first;
+    if (clazz is! Map) return const <Map<String, dynamic>>[];
+    final dynamic course = clazz['course'];
+    if (course is! Map) return const <Map<String, dynamic>>[];
+    final dynamic courseData = course['data'];
+    if (courseData is! List || courseData.isEmpty) return const <Map<String, dynamic>>[];
+    final dynamic firstCourse = courseData.first;
+    if (firstCourse is! Map) return const <Map<String, dynamic>>[];
+    final dynamic knowledge = firstCourse['knowledge'];
+    if (knowledge is! Map) return const <Map<String, dynamic>>[];
+    final dynamic nodes = knowledge['data'];
+    if (nodes is! List) return const <Map<String, dynamic>>[];
+    return nodes
+        .whereType<Map<dynamic, dynamic>>()
+        .map((Map<dynamic, dynamic> m) => m.cast<String, dynamic>())
+        .toList();
+  }
+
+  /// 章节标题：gas 只给 label（如 2.1）和 name，name 本身已经带编号时直接用，
+  /// 避免出现「2.1 1.1近代中国…」这种双重编号；没有编号时才用 label 补顺序。
+  static String _chapterTitle(Map<String, dynamic> node) {
+    final String name = '${node['name'] ?? ''}'.trim();
+    final String label = '${node['label'] ?? ''}'.trim();
+    if (name.isEmpty) return label.isEmpty ? '章节 ${node['id']}' : label;
+    if (label.isEmpty || RegExp(r'^\d').hasMatch(name)) return name;
+    return '$label $name';
+  }
+
+  /// 按 label 的数字段排序（1 < 1.1 < 2）；label 缺失或相同时退回 indexorder。
+  static int _compareChapterNode(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final List<int> la = _labelParts('${a['label'] ?? ''}');
+    final List<int> lb = _labelParts('${b['label'] ?? ''}');
+    for (int i = 0; i < la.length && i < lb.length; i++) {
+      if (la[i] != lb[i]) return la[i].compareTo(lb[i]);
+    }
+    if (la.length != lb.length) return la.length.compareTo(lb.length);
+    return _intValue(a['indexorder']).compareTo(_intValue(b['indexorder']));
+  }
+
+  static List<int> _labelParts(String label) {
+    final List<int> out = <int>[];
+    for (final RegExpMatch m in RegExp(r'\d+').allMatches(label)) {
+      out.add(int.tryParse(m.group(0)!) ?? 0);
+    }
+    return out;
+  }
+
+  static int _intValue(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+
+  /// 判断一个 attachment 是不是任务点。
+  ///
+  /// 旧版 cards 会下发 `job: true`；新版响应里没有 `job` 字段，任务点的特征是
+  /// 同时带 `jobid` 和资源标识（视频/文档有 objectid，其他类型有 otherInfo）。
+  /// `job` 明确为 false/0 时仍然排除，不能把老师的非任务点素材当成任务。
+  static bool _isTaskPoint(Map<String, dynamic> att, Map<String, dynamic> prop) {
+    final dynamic job = att['job'];
+    if (job == true || '$job' == '1') return true;
+    if (job == false || '$job' == '0' || '$job' == 'false') return false;
+    final String jobId = '${att['jobid'] ?? prop['jobid'] ?? ''}'.trim();
+    if (jobId.isEmpty) return false;
+    final String objectId = '${prop['objectid'] ?? att['objectId'] ?? ''}'.trim();
+    final String otherInfo = '${att['otherInfo'] ?? ''}'.trim();
+    return objectId.isNotEmpty || otherInfo.isNotEmpty;
+  }
 
   /// 读取任务点的「已通过」标记。
   ///

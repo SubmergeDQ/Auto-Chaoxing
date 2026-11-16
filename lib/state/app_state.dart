@@ -526,11 +526,17 @@ class AppState extends ChangeNotifier {
     _pointErrors.clear();
     _notify();
 
-    final Result<List<Chapter>> r = await api.fetchChapters(
-      courseId: course.courseId,
-      classId: course.classId,
-      cpi: course.cpi,
-    );
+    Result<List<Chapter>> r;
+    try {
+      r = await api.fetchChapters(
+        courseId: course.courseId,
+        classId: course.classId,
+        cpi: course.cpi,
+      );
+    } catch (e) {
+      // 接口层的任何意外异常都要落到 error，不能让界面永远停在「正在读取章节」。
+      r = Err<List<Chapter>>('parse', '章节读取异常：$e');
+    }
     if (r is Err<List<Chapter>>) {
       chaptersError = r.message;
       chaptersState = LoadState.error;
