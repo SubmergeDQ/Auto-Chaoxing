@@ -156,20 +156,7 @@ class _ChapterContent extends StatelessWidget {
     switch (state.chaptersState) {
       case LoadState.idle:
       case LoadState.loading:
-        return const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              AcxStatusBadge(label: '读取中', status: AcxStatus.running),
-              SizedBox(height: AcxSpacing.xl),
-              SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
-              SizedBox(height: AcxSpacing.lg),
-              Text('正在读取章节…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
-              SizedBox(height: AcxSpacing.xs),
-              Text('完成后会自动列出章节', style: TextStyle(fontSize: 12, color: AcxColors.textTertiary)),
-            ],
-          ),
-        );
+        return const _ChapterLoadingView();
       case LoadState.error:
         return AcxErrorState(
           title: '章节读取失败',
@@ -186,6 +173,54 @@ class _ChapterContent extends StatelessWidget {
         }
         return _ChapterList(state: state, onOpenRun: onOpenRun);
     }
+  }
+}
+
+/// 章节读取中的等待视图：转圈 + 已等待秒数。
+///
+/// 章节接口慢或网络不佳时，纯转圈会让人以为卡死了；把等待时间摆出来，
+/// 并说明超时会自动转为失败（网络超时上限约 40 秒），用户就知道该等还是该查网络。
+class _ChapterLoadingView extends StatefulWidget {
+  const _ChapterLoadingView();
+
+  @override
+  State<_ChapterLoadingView> createState() => _ChapterLoadingViewState();
+}
+
+class _ChapterLoadingViewState extends State<_ChapterLoadingView> {
+  int _seconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    Timer.periodic(const Duration(seconds: 1), (Timer t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() => _seconds++);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const AcxStatusBadge(label: '读取中', status: AcxStatus.running),
+          const SizedBox(height: AcxSpacing.xl),
+          const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
+          const SizedBox(height: AcxSpacing.lg),
+          const Text('正在读取章节…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
+          const SizedBox(height: AcxSpacing.xs),
+          Text(
+            '已等待 $_seconds 秒 · 超过约 40 秒会自动转为失败并给重试',
+            style: const TextStyle(fontSize: 12, color: AcxColors.textTertiary),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -261,7 +296,7 @@ class _SignButton extends StatelessWidget {
   }
 }
 
-/// 整门课的入口：按章节顺序跑完全部视频任务点。
+/// 整门课的入口：按章节顺序跑完全部可执行任务点。
 ///
 /// 放在章节列表上方而不是藏在某一章里——这是范围更大的动作，
 /// 单章按钮仍然保留，两者互斥（同一时间只允许一个执行会话）。
@@ -283,7 +318,7 @@ class _CourseRunButton extends StatelessWidget {
             ? '连接账号后才能执行'
             : busy
                 ? '已有任务在执行，结束后可以再开始'
-                : '按章节顺序执行整门课的视频任务点';
+                : '按章节顺序执行整门课的可执行任务点';
 
     return Tooltip(
       message: reason,
@@ -567,7 +602,7 @@ class _PointsView extends StatelessWidget {
   }
 }
 
-/// 章节里的唯一主动作：执行本章视频。执行中、已归档、未连接时给出原因而不是假开关。
+/// 章节里的唯一主动作：执行本章任务点（视频与阅读）。执行中、已归档、未连接时给出原因而不是假开关。
 class _RunFooter extends StatelessWidget {
   const _RunFooter({
     required this.state,
@@ -583,10 +618,10 @@ class _RunFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<TaskPoint> videos = points.where((TaskPoint p) => p.isVideo).toList();
-    if (videos.isEmpty) {
+    final List<TaskPoint> jobs = points.where((TaskPoint p) => p.isExecutable).toList();
+    if (jobs.isEmpty) {
       if (points.isEmpty) return const SizedBox.shrink();
-      // 有任务点但没有视频：不要静默留白，否则用户会以为客户端漏读了任务，
+      // 有任务点但没有可自动执行的：不要静默留白，否则用户会以为客户端漏读了任务，
       // 或者反复点章节找那个「执行」按钮。
       final Map<String, int> byType = <String, int>{};
       for (final TaskPoint p in points) {
@@ -628,8 +663,10 @@ class _RunFooter extends StatelessWidget {
     final bool canRun = !archived && !busy && state.signedIn;
 
     // 重跑一章时把「会跳过什么」提前说清：用户看到任务点没动，也有据可查。
-    final int passedCount = videos.where((TaskPoint p) => p.passed == true).length;
-    final int resumeCount = videos.where((TaskPoint p) => p.canResume).length;
+    final int passedCount = jobs.where((TaskPoint p) => p.passed == true).length;
+    final int resumeCount = jobs.where((TaskPoint p) => p.canResume).length;
+    final int videoCount = jobs.where((TaskPoint p) => p.isVideo).length;
+    final int readCount = jobs.length - videoCount;
 
     final String hint;
     if (archived) {
@@ -644,11 +681,14 @@ class _RunFooter extends StatelessWidget {
         if (resumeCount > 0) '$resumeCount 个从中间继续',
         if (passedCount == 0 && resumeCount == 0) '耗时与视频总长相近',
       ];
-      // 混排章节里视频只占一部分，剩下的文档/作业不会被执行；
+      // 混排章节里可执行任务点只占一部分，剩下的文档/作业不会被执行；
       // 不写出来用户会以为点一次就把整章做完了。
-      final int others = points.length - videos.length;
-      hint = '${videos.length} 个视频任务点 · ${notes.join('，')}'
-          '${others > 0 ? '；另有 $others 个非视频任务点需在手机端完成' : ''}';
+      final int others = points.length - jobs.length;
+      final String jobWord = videoCount > 0 && readCount > 0
+          ? '$videoCount 个视频 · $readCount 个阅读'
+          : (readCount > 0 ? '$readCount 个阅读任务点' : '$videoCount 个视频任务点');
+      hint = '$jobWord · ${notes.join('，')}'
+          '${others > 0 ? '；另有 $others 个任务点需在手机端完成' : ''}';
     }
 
     return Padding(
@@ -672,7 +712,7 @@ class _RunFooter extends StatelessWidget {
                         )
                     : null,
                 icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                label: Text(busy ? '任务执行中' : '执行本章视频'),
+                label: Text(busy ? '任务执行中' : '执行本章'),
               ),
             ],
           ),

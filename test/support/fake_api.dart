@@ -257,6 +257,25 @@ class FakeChaoxingApi extends ChaoxingApi {
     if (neverPass.contains(point.objectId)) return const Ok<bool>(false);
     return Ok<bool>(playTime >= duration);
   }
+
+  /// 这些 jobid 的阅读任务点永远被平台拒绝，用来覆盖失败分支。
+  final Set<String> readRejects = <String>{};
+  int readCalls = 0;
+
+  @override
+  Future<Result<bool>> completeReadPoint({
+    required String courseId,
+    required String classId,
+    required String chapterId,
+    required TaskPoint point,
+  }) async {
+    readCalls++;
+    if (authExpiredOnReport) return const Err<bool>('authExpired', '登录已失效');
+    if (readRejects.contains(point.jobId)) {
+      return const Err<bool>('api', '平台拒绝：无效的请求参数');
+    }
+    return const Ok<bool>(true);
+  }
 }
 
 const List<Course> kDemoCourses = <Course>[

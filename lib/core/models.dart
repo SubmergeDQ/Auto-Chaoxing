@@ -83,6 +83,8 @@ class TaskPoint {
     this.attDuration = '0',
     this.attDurationEnc = '',
     this.videoFaceCaptureEnc = '',
+    this.jtoken = '',
+    this.microTopicId = 0,
     this.passed,
   });
 
@@ -96,11 +98,25 @@ class TaskPoint {
   final String attDurationEnc;
   final String videoFaceCaptureEnc;
 
+  /// 阅读/文档任务点的完成票据。平台完成接口（readv2/job）必带，
+  /// 由卡片下发、随会话刷新；没有它就无法向平台证明这次完成是合法的。
+  final String jtoken;
+
+  /// 专题归属 id；非专题任务点为 0。完成阅读任务点时要原样带上。
+  final int microTopicId;
+
   /// 卡片里给出的「已通过」标记。null 表示卡片没给这个字段（语义待真实账号确认），
   /// 不能当 false 用——没给只代表我们不知道，不代表平台没通过。
   final bool? passed;
 
   bool get isVideo => type == 'video' && objectId.isNotEmpty;
+
+  /// 可自动完成的阅读任务点：type=read 且带 jobid 与 jtoken。
+  /// 只有 `_jobid` 没有 `jobid` 的「去阅读」链接不是任务点，平台不追踪它的完成。
+  bool get isRead => type == 'read' && jobId.isNotEmpty && jtoken.isNotEmpty;
+
+  /// 本客户端能自动执行的任务点（视频 + 阅读）。文档/作业/测验仍需手机端完成。
+  bool get isExecutable => isVideo || isRead;
 
   /// 平台记录的累计观看秒数（来自卡片 `attDuration`）。
   ///

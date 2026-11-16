@@ -28,7 +28,7 @@ void main() {
         onProgress: progress.add,
         onLog: logs.add,
       );
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -52,7 +52,7 @@ void main() {
       final List<TaskLog> logs = <TaskLog>[];
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -73,7 +73,7 @@ void main() {
       );
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -90,7 +90,7 @@ void main() {
       final List<TaskLog> logs = <TaskLog>[];
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -106,7 +106,7 @@ void main() {
         ..authExpiredAfterReports = 3;
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -121,7 +121,7 @@ void main() {
         ..reportGate = Completer<void>();
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
-      final Future<VideoRunnerResult> pending = runner.runChapterVideos(
+      final Future<VideoRunnerResult> pending = runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -136,7 +136,7 @@ void main() {
       expect(r.message, contains('从断点继续'));
     });
 
-    test('本章没有视频任务点时直接成功，不请求视频状态', () async {
+    test('本章没有可执行任务点时直接成功，不请求视频状态', () async {
       final FakeChaoxingApi api = FakeChaoxingApi(
         points: const <TaskPoint>[
           TaskPoint(type: 'document', jobId: 'j-1', name: '讲义.pdf'),
@@ -145,14 +145,14 @@ void main() {
       );
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
 
       expect(r.phase, TaskPhase.succeeded);
-      // 有任务点但不是视频：不能说「没有任务点」，那是另一回事。
-      expect(r.message, contains('都不是视频'));
+      // 有任务点但都不能自动执行：不能说「没有任务点」，那是另一回事。
+      expect(r.message, contains('都不能自动执行'));
       expect(r.message, contains('2 个任务点'));
       expect(api.statusCalls, 0);
     });
@@ -161,13 +161,90 @@ void main() {
       final FakeChaoxingApi api = FakeChaoxingApi(points: const <TaskPoint>[]);
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
 
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
 
       expect(r.phase, TaskPhase.succeeded);
       expect(r.message, '本章没有任务点');
+    });
+
+    test('阅读任务点走完成确认，不请求视频状态与进度上报', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          TaskPoint(
+            type: 'read',
+            jobId: 'read-101',
+            name: '论中国共产党历史',
+            jtoken: 'jt-101',
+          ),
+        ],
+      );
+      final List<TaskLog> logs = <TaskLog>[];
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
+      final VideoRunnerResult r = await runner.runChapterPoints(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(r.completed, <String>['论中国共产党历史']);
+      expect(api.readCalls, 1);
+      expect(api.statusCalls, 0, reason: '阅读点不需要取视频时长');
+      expect(api.reportCalls, 0, reason: '阅读点没有时长上报循环');
+      expect(
+        logs.any((TaskLog l) => l.message.contains('通过：论中国共产党历史')),
+        isTrue,
+      );
+    });
+
+    test('只有 _jobid 没有 jobid 的阅读入口不算任务点，不发起完成调用', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          // 平台规则：顶层 jobid 才是任务点标识；只有 property._jobid 的是内容链接。
+          TaskPoint(type: 'read', jobId: '', name: '去阅读', jtoken: 'jt-x'),
+        ],
+      );
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
+      final VideoRunnerResult r = await runner.runChapterPoints(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.succeeded);
+      expect(api.readCalls, 0);
+      expect(r.message, contains('1 个任务点'));
+    });
+
+    test('阅读完成被平台拒绝时计入未通过，并把原因带回日志', () async {
+      final FakeChaoxingApi api = FakeChaoxingApi(
+        points: const <TaskPoint>[
+          TaskPoint(
+            type: 'read',
+            jobId: 'read-202',
+            name: '阅读材料',
+            jtoken: 'jt-202',
+          ),
+        ],
+      )..readRejects.add('read-202');
+      final List<TaskLog> logs = <TaskLog>[];
+
+      final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
+      final VideoRunnerResult r = await runner.runChapterPoints(
+        course: kDemoCourses.first,
+        chapter: kDemoChapters.first,
+      );
+
+      expect(r.phase, TaskPhase.failed);
+      expect(r.failed, <String>['阅读材料']);
+      expect(
+        logs.any((TaskLog l) => l.message.contains('平台拒绝')),
+        isTrue,
+        reason: '平台的拒绝原因要进日志，不能静默吞掉',
+      );
     });
 
     test('平台已标记通过的任务点整段跳过，不发起任何上报', () async {
@@ -186,7 +263,7 @@ void main() {
       final List<TaskLog> logs = <TaskLog>[];
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -219,7 +296,7 @@ void main() {
       final List<TaskLog> logs = <TaskLog>[];
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep, onLog: logs.add);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -244,7 +321,7 @@ void main() {
       );
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );
@@ -261,7 +338,7 @@ void main() {
       );
 
       final TaskRunner runner = TaskRunner(api, sleep: _noSleep);
-      final VideoRunnerResult r = await runner.runChapterVideos(
+      final VideoRunnerResult r = await runner.runChapterPoints(
         course: kDemoCourses.first,
         chapter: kDemoChapters.first,
       );

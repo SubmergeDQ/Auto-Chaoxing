@@ -318,51 +318,62 @@ class ChaoxingApi {
         '?chapterId=$chapterId&courseId=$courseId&clazzid=$classId&cpi=$cpi'
         '&enc=${md5Hex('${DateTime.now().microsecondsSinceEpoch}')}&mooc2=1';
     try {
-      final Response<String> resp = await _dio.get<String>(
-        'https://mooc1.chaoxing.com/knowledge/cards',
-        queryParameters: <String, dynamic>{
-          'clazzid': classId,
-          'courseid': courseId,
-          'knowledgeid': chapterId,
-          'num': '$page',
-          'ut': 's',
-          'cpi': cpi,
-          'v': '20160407-1',
-        },
-        options: Options(headers: <String, dynamic>{'Referer': ref}),
-      );
-      final String html = resp.data ?? '';
-      if (_looksLikeLogin(html)) {
-        return const Err<ChapterCards>('authExpired', '登录已失效');
-      }
-      final Map<String, dynamic>? marg = extractMarg(html);
-      if (marg == null) {
-        return const Err<ChapterCards>('locked', '章节未开放：上一章未完成或测验未提交');
-      }
-      final Map<String, dynamic> defaults =
-          (marg['defaults'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+      // num 是卡片序号，不是页码：一个小节的内容可以拆成多张卡
+      // （常见：num=0 视频、num=1 章节测验、再往后是空卡）。只读 num=0 会把
+      // 排在后面的任务点整批漏掉。逐张拉取，直到某张卡不再返回 mArg。
+      const int maxCards = 5;
+      Map<String, dynamic> defaults = const <String, dynamic>{};
       final List<TaskPoint> points = <TaskPoint>[];
-      for (final dynamic raw in (marg['attachments'] ?? <dynamic>[]) as List<dynamic>) {
-        final Map<String, dynamic> att = (raw as Map).cast<String, dynamic>();
-        final Map<String, dynamic> prop =
-            (att['property'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-        if (!_isTaskPoint(att, prop)) continue;
-        points.add(
-          TaskPoint(
-            type: '${att['type'] ?? ''}',
-            jobId: '${att['jobid'] ?? ''}',
-            name: '${prop['name'] ?? ''}',
-            objectId: '${prop['objectid'] ?? ''}',
-            otherInfo: '${att['otherInfo'] ?? ''}',
-            rt: '${prop['rt'] ?? '0.9'}',
-            attDuration: '${att['attDuration'] ?? '0'}',
-            attDurationEnc: '${att['attDurationEnc'] ?? ''}',
-            videoFaceCaptureEnc: '${att['videoFaceCaptureEnc'] ?? ''}',
-            // 已通过标记：卡片给了就用，没给就留 null（不猜）。
-            // 语义待真实账号确认，因此上层只在明确 true 时跳过，null / false 都照常执行。
-            passed: _readPassed(att, prop),
-          ),
+      bool sawAnyCard = false;
+      for (int num = page; num < page + maxCards; num++) {
+        final Response<String> resp = await _dio.get<String>(
+          'https://mooc1.chaoxing.com/knowledge/cards',
+          queryParameters: <String, dynamic>{
+            'clazzid': classId,
+            'courseid': courseId,
+            'knowledgeid': chapterId,
+            'num': '$num',
+            'ut': 's',
+            'cpi': cpi,
+            'v': '20160407-1',
+          },
+          options: Options(headers: <String, dynamic>{'Referer': ref}),
         );
+        final String html = resp.data ?? '';
+        if (_looksLikeLogin(html)) {
+          return const Err<ChapterCards>('authExpired', '登录已失效');
+        }
+        final Map<String, dynamic>? marg = extractMarg(html);
+        if (marg == null) break; // 这张卡没有任务数据：卡片到头了
+        sawAnyCard = true;
+        defaults = (marg['defaults'] as Map?)?.cast<String, dynamic>() ?? defaults;
+        for (final dynamic raw in (marg['attachments'] ?? <dynamic>[]) as List<dynamic>) {
+          final Map<String, dynamic> att = (raw as Map).cast<String, dynamic>();
+          final Map<String, dynamic> prop =
+              (att['property'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+          if (!_isTaskPoint(att, prop)) continue;
+          points.add(
+            TaskPoint(
+              type: '${att['type'] ?? ''}',
+              jobId: '${att['jobid'] ?? prop['jobid'] ?? ''}',
+              name: '${prop['name'] ?? prop['title'] ?? ''}',
+              objectId: '${prop['objectid'] ?? ''}',
+              otherInfo: '${att['otherInfo'] ?? ''}',
+              rt: '${prop['rt'] ?? '0.9'}',
+              attDuration: '${att['attDuration'] ?? '0'}',
+              attDurationEnc: '${att['attDurationEnc'] ?? ''}',
+              videoFaceCaptureEnc: '${att['videoFaceCaptureEnc'] ?? ''}',
+              jtoken: '${att['jtoken'] ?? ''}',
+              microTopicId: _intValue(att['microTopicId']),
+              // 已通过标记：卡片给了就用，没给就留 null（不猜）。
+              // 语义待真实账号确认，因此上层只在明确 true 时跳过，null / false 都照常执行。
+              passed: _readPassed(att, prop),
+            ),
+          );
+        }
+      }
+      if (!sawAnyCard) {
+        return const Err<ChapterCards>('locked', '章节未开放：上一章未完成或测验未提交');
       }
       return Ok<ChapterCards>(
         ChapterCards(
@@ -374,6 +385,51 @@ class ChaoxingApi {
       );
     } on DioException catch (e) {
       return Err<ChapterCards>('network', _netMessage(e));
+    }
+  }
+
+  /// 完成阅读任务点（insertreadV2 且带 jobid 的那种）。
+  ///
+  /// 协议来自平台 readV2 模块自己的 `finishJob`：向 `/mooc-ans/job/readv2`
+  /// 发一次 GET，带卡片下发的 jtoken。平台返回 `status` 判定是否完成；
+  /// 被拒时把平台的 msg 原样带回日志，不猜测原因。
+  Future<Result<bool>> completeReadPoint({
+    required String courseId,
+    required String classId,
+    required String chapterId,
+    required TaskPoint point,
+  }) async {
+    try {
+      final Response<String> resp = await _dio.get<String>(
+        'https://mooc1.chaoxing.com/mooc-ans/job/readv2',
+        queryParameters: <String, dynamic>{
+          'jobid': point.jobId,
+          'knowledgeid': chapterId,
+          'courseid': courseId,
+          'clazzid': classId,
+          'jtoken': point.jtoken,
+          'checkMicroTopic': 'true',
+          'microTopicId': '${point.microTopicId}',
+          'courseEngineInfo': 'false',
+        },
+        options: Options(
+          headers: <String, dynamic>{
+            'Referer': 'https://mooc1.chaoxing.com/knowledge/cards'
+                '?clazzid=$classId&courseid=$courseId&knowledgeid=$chapterId',
+          },
+        ),
+      );
+      final Map<String, dynamic>? json = _tryJson(resp.data);
+      if (json == null) {
+        return const Err<bool>('parse', '阅读完成响应无法解析');
+      }
+      if (json['status'] == true) {
+        return const Ok<bool>(true);
+      }
+      final String msg = '${json['msg'] ?? json['message'] ?? '平台未判定完成'}';
+      return Err<bool>('api', '平台拒绝：$msg');
+    } on DioException catch (e) {
+      return Err<bool>('network', _netMessage(e));
     }
   }
 

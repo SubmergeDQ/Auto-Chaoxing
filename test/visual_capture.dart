@@ -587,7 +587,7 @@ Future<void> capture({
     }
   }
   if (tapRun) {
-    final Finder run = find.text('执行本章视频');
+    final Finder run = find.text('执行本章');
     if (run.evaluate().isNotEmpty) {
       await tester.ensureVisible(run.first);
       await tester.pump(const Duration(milliseconds: 200));

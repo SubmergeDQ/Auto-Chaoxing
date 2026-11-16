@@ -105,10 +105,10 @@ class TaskRunner {
 
   void _log(String msg, {String level = 'info'}) => onLog?.call(TaskLog(msg, level: level));
 
-  /// 把一章里的所有视频任务点刷完。
+  /// 把一章里所有可自动执行的任务点（视频 + 阅读）刷完。
   ///
   /// 返回前一定会给出终态：succeeded / failed / needsAttention / stopped。
-  Future<VideoRunnerResult> runChapterVideos({
+  Future<VideoRunnerResult> runChapterPoints({
     required Course course,
     required Chapter chapter,
   }) async {
@@ -143,13 +143,14 @@ class TaskRunner {
     }
 
     final ChapterCards data = (cards as Ok<ChapterCards>).value;
-    final List<TaskPoint> videos = data.points.where((TaskPoint p) => p.isVideo).toList();
-    if (videos.isEmpty) {
-      // 「没有视频」和「没有任务」是两件事：只有文档/作业/测验的章节如果也回
-      // 「没有视频任务点」，用户会以为读错了数据，其实是这些类型本就不在本客户端范围内。
+    final List<TaskPoint> jobs =
+        data.points.where((TaskPoint p) => p.isExecutable).toList();
+    if (jobs.isEmpty) {
+      // 「没有可执行任务」和「没有任务」是两件事：只有文档/作业/测验的章节如果
+      // 也回「没有任务点」，用户会以为读错了数据，其实是这些类型本就不在自动执行范围内。
       final String message = data.points.isEmpty
           ? '本章没有任务点'
-          : '本章 ${data.points.length} 个任务点都不是视频（文档/作业/测验），需要在手机端完成';
+          : '本章 ${data.points.length} 个任务点都不能自动执行（文档/作业/测验），需要在手机端完成';
       _log(message);
       _emit(TaskProgress(phase: TaskPhase.succeeded, message: message));
       return VideoRunnerResult(
@@ -159,13 +160,13 @@ class TaskRunner {
         message: message,
       );
     }
-    _log('开始处理「${chapter.title}」，共 ${videos.length} 个视频任务点');
+    _log('开始处理「${chapter.title}」，共 ${jobs.length} 个可执行任务点');
 
     final String uid = data.userId.isNotEmpty
         ? data.userId
         : (api.profile?.uid ?? '');
 
-    for (int i = 0; i < videos.length; i++) {
+    for (int i = 0; i < jobs.length; i++) {
       if (_stopRequested) {
         _emit(const TaskProgress(phase: TaskPhase.stopped, message: '已停止'));
         return VideoRunnerResult(
@@ -178,7 +179,7 @@ class TaskRunner {
         );
       }
 
-      final TaskPoint point = videos[i];
+      final TaskPoint point = jobs[i];
 
       // 平台已标记通过的整段跳过：重跑一章时不再白刷一遍。
       // 只有明确 true 才跳，null / false 都照常执行（卡片没给字段时不能猜）。
@@ -189,7 +190,7 @@ class TaskRunner {
           phase: TaskPhase.running,
           current: point.name,
           done: i + 1,
-          total: videos.length,
+          total: jobs.length,
         ));
         continue;
       }
@@ -199,8 +200,50 @@ class TaskRunner {
         phase: TaskPhase.running,
         current: point.name,
         done: i,
-        total: videos.length,
+        total: jobs.length,
       ));
+
+      // 阅读任务点：一次完成调用即终态，没有视频那样的时长上报循环。
+      if (point.isRead) {
+        final Result<bool> r = await api.completeReadPoint(
+          courseId: course.courseId,
+          classId: course.classId,
+          chapterId: chapter.chapterId,
+          point: point,
+        );
+        switch (r) {
+          case Ok<bool>(value: true):
+            completed.add(point.name);
+            _log('通过：${point.name}（阅读任务点）', level: 'info');
+          case Ok<bool>():
+            failed.add(point.name);
+            _log('未通过：${point.name}（平台未判定完成）', level: 'warn');
+          case Err<bool>():
+            if (r.code == 'authExpired') {
+              const String message = '登录已失效，请重新连接账号后再继续';
+              _log(message, level: 'error');
+              _emit(TaskProgress(
+                phase: TaskPhase.needsAttention,
+                done: i,
+                total: jobs.length,
+                message: message,
+              ));
+              return VideoRunnerResult(
+                phase: TaskPhase.needsAttention,
+                completed: completed,
+                failed: failed,
+                skipped: skipped,
+                resumed: resumed,
+                message: message,
+              );
+            }
+            failed.add(point.name);
+            _log('失败：${point.name} -> ${r.message}', level: 'error');
+        }
+        // 任务点之间留间隔，单账号严格串行
+        await _delay(const Duration(seconds: 2));
+        continue;
+      }
 
       final Result<VideoStatus> status = await api.videoStatus(point.objectId, data.fid);
       if (status is Err<VideoStatus>) {
@@ -241,7 +284,7 @@ class TaskRunner {
             _emit(TaskProgress(
               phase: TaskPhase.stopped,
               done: i,
-              total: videos.length,
+              total: jobs.length,
               message: '已停止',
             ));
             return VideoRunnerResult(
@@ -262,7 +305,7 @@ class TaskRunner {
             _emit(TaskProgress(
               phase: TaskPhase.needsAttention,
               done: i,
-              total: videos.length,
+              total: jobs.length,
               message: message,
             ));
             return VideoRunnerResult(
@@ -284,7 +327,7 @@ class TaskRunner {
 
     final bool allOk = failed.isEmpty;
     final int passedCount = completed.length + skipped.length;
-    final String summary = '$passedCount / ${videos.length} 个任务点已通过';
+    final String summary = '$passedCount / ${jobs.length} 个任务点已通过';
     if (skipped.isNotEmpty) {
       _log('其中 ${skipped.length} 个平台已通过，本次跳过', level: 'trace');
     }
@@ -294,8 +337,8 @@ class TaskRunner {
     );
     _emit(TaskProgress(
       phase: allOk ? TaskPhase.succeeded : TaskPhase.failed,
-      done: videos.length,
-      total: videos.length,
+      done: jobs.length,
+      total: jobs.length,
       message: summary,
     ));
     return VideoRunnerResult(

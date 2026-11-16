@@ -381,25 +381,25 @@ void main() {
       await tester.tap(find.text('第一章 函数与极限'));
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('执行本章视频'), findsOneWidget);
+      expect(find.text('执行本章'), findsOneWidget);
       expect(find.textContaining('2 个视频任务点 · 耗时与视频总长相近'), findsOneWidget);
-      // 混排章节要说清非视频任务点不归本客户端管，否则用户以为一键做完。
-      expect(find.textContaining('另有 2 个非视频任务点'), findsOneWidget);
+      // 混排章节要说清不可自动执行的任务点不归本客户端管，否则用户以为一键做完。
+      expect(find.textContaining('另有 2 个任务点需在手机端完成'), findsOneWidget);
 
-      final Finder runButton = find.text('执行本章视频');
+      final Finder runButton = find.text('执行本章');
       await tester.ensureVisible(runButton);
       await tester.pump(const Duration(milliseconds: 200));
       await tester.tap(runButton);
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('开始执行本章视频'), findsOneWidget);
+      expect(find.text('开始执行本章'), findsOneWidget);
       expect(find.textContaining('人脸抽检'), findsOneWidget);
 
       await tester.tap(find.text('取消'));
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(state.run.hasRun, isFalse);
-      expect(find.text('开始执行本章视频'), findsNothing);
+      expect(find.text('开始执行本章'), findsNothing);
     });
 
     testWidgets('章节面板提供整门课入口，确认前不发起执行', (WidgetTester tester) async {
@@ -677,7 +677,7 @@ void main() {
       await tester.tap(find.text('第一章 函数与极限'));
       await tester.pump(const Duration(milliseconds: 300));
 
-      final Finder runButton = find.text('执行本章视频');
+      final Finder runButton = find.text('执行本章');
       await tester.ensureVisible(runButton);
       await tester.pump(const Duration(milliseconds: 200));
       await tester.tap(runButton);

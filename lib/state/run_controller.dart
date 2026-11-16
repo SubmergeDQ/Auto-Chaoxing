@@ -91,7 +91,7 @@ class RunController {
     );
   }
 
-  /// 整门课：按章节顺序串行跑，无视频的章直接跳过。
+  /// 整门课：按章节顺序串行跑，没有可执行任务点的章直接跳过。
   ///
   /// 与单章一样，遇到 locked / 登录失效 / 人脸抽检立刻停：后面的章节依赖
   /// 前面的完成状态，硬跑只会连续失败，还会把「需要人工」埋进一长串日志里。
@@ -200,7 +200,7 @@ class RunController {
       );
       _runner = runner;
 
-      final VideoRunnerResult result = await runner.runChapterVideos(
+      final VideoRunnerResult result = await runner.runChapterPoints(
         course: course,
         chapter: chapter,
       );
@@ -212,7 +212,7 @@ class RunController {
       switch (result.phase) {
         case TaskPhase.succeeded:
           if (result.completed.isEmpty && result.skipped.isEmpty) {
-            // 整章没有视频任务点：不算失败，单独计数，汇总时说清楚。
+            // 整章没有可执行任务点：不算失败，单独计数，汇总时说清楚。
             tally.empty++;
           } else {
             tally.ok++;
@@ -262,7 +262,7 @@ class RunController {
   String _batchSummary(_BatchTally tally, int total) {
     final List<String> parts = <String>[
       '${tally.ok} 章完成',
-      if (tally.empty > 0) '${tally.empty} 章无视频跳过',
+      if (tally.empty > 0) '${tally.empty} 章无可执行任务点跳过',
       if (tally.failed > 0) '${tally.failed} 章有未通过任务点',
     ];
     return '${parts.join('，')}（共 $total 章）';
@@ -454,7 +454,7 @@ class RunController {
   }
 }
 
-/// 批次内的章节分类：成功 / 无视频 / 有未通过任务点。
+/// 批次内的章节分类：成功 / 无可执行任务点 / 有未通过任务点。
 class _BatchTally {
   int ok = 0;
   int empty = 0;

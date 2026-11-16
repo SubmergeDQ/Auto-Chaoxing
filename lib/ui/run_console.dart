@@ -1,4 +1,4 @@
-// 任务执行页：状态卡 + 实时日志控制台，以及章节里的「执行本章视频」入口。
+// 任务执行页：状态卡 + 实时日志控制台，以及章节里的「执行本章」入口。
 // 执行逻辑在 state/run_controller.dart，本文件只负责把状态讲清楚、把停止交到用户手上。
 import 'dart:async';
 
@@ -23,13 +23,13 @@ Future<void> startChapterRun(
   final Course? course = state.selectedCourse;
   if (course == null || state.run.busy) return;
 
-  final int videoCount = (state.pointsFor(chapter.chapterId) ?? const <TaskPoint>[])
-      .where((TaskPoint p) => p.isVideo)
+  final int jobCount = (state.pointsFor(chapter.chapterId) ?? const <TaskPoint>[])
+      .where((TaskPoint p) => p.isExecutable)
       .length;
   // 一行一件事：范围 / 会怎么跑 / 什么时候停。挤成一段会把对话框撑到满屏。
-  final String scope = videoCount > 0
-      ? '将处理「${chapter.title}」中的 $videoCount 个视频任务点。'
-      : '将处理「${chapter.title}」中的视频任务点。';
+  final String scope = jobCount > 0
+      ? '将处理「${chapter.title}」中的 $jobCount 个任务点（视频与阅读）。'
+      : '将处理「${chapter.title}」中的视频与阅读任务点。';
 
   final bool? confirmed = await showDialog<bool>(
     context: context,
@@ -38,7 +38,7 @@ Future<void> startChapterRun(
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AcxRadius.lg)),
       title: const Text(
-        '开始执行本章视频',
+        '开始执行本章',
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AcxColors.textPrimary),
       ),
       // 定宽：不写宽度时 AlertDialog 会跟着最长那一行走，桌面端会拉成一条。
@@ -47,7 +47,8 @@ Future<void> startChapterRun(
         child: Text(
           // 断行位置是写死的：中文在这里按字换行，"作业" 和 "处理。" 被拆开很难看。
           '$scope\n文档与作业不在本次范围。\n\n'
-          '执行时平台已通过的会跳过，已看过的从中间继续。\n'
+          '执行时平台已通过的会跳过，已看过的视频从中间继续；\n'
+          '阅读任务点会向平台提交一次完成确认。\n'
           '耗时与视频总长相近，期间可以随时停止。\n\n'
           '遇到人脸抽检、验证码或登录失效会立即停止，\n交回你自己处理。',
           style: const TextStyle(fontSize: 13, height: 1.7, color: AcxColors.textSecondary),
@@ -102,8 +103,8 @@ Future<void> startCourseRun(
         child: Text(
           '将依次处理「${course.name}」的全部 ${chapters.length} 章，\n'
           '一章跑完再开始下一章。\n\n'
-          '没有视频任务点的章节会跳过；平台已通过的会跳过，\n'
-          '已看过的从中间继续。\n\n'
+          '没有可执行任务点的章节会跳过；平台已通过的会跳过，\n'
+          '已看过的视频从中间继续。\n\n'
           '遇到人脸抽检、验证码或登录失效会立即停止，\n'
           '后面的章节不再执行。\n'
           '耗时约等于全部视频总长，期间可以随时停止。',
@@ -145,7 +146,7 @@ class RunPage extends StatelessWidget {
       return AcxEmptyState(
         icon: Icons.bolt_outlined,
         title: '还没有开始执行',
-        message: '到课程工作台展开章节点「执行本章视频」，或直接点章节面板上方的「执行整门课」。\n'
+        message: '到课程工作台展开章节点「执行本章」，或直接点章节面板上方的「执行整门课」。\n'
             '执行时这里会显示进度与日志；遇到人脸抽检、验证码或登录失效会立即停下。',
         action: onGoToCourses == null
             ? null
@@ -361,7 +362,7 @@ class _StatusCard extends StatelessWidget {
 
   String _subtitle(RunController run) {
     if (run.chapterTitle.isEmpty) {
-      return '在课程工作台展开章节后点「执行本章视频」，这里会接着显示进度。';
+      return '在课程工作台展开章节后点「执行本章」，这里会接着显示进度。';
     }
     final StringBuffer buffer = StringBuffer(run.courseName);
     // 批量执行时标题是「整门课（N 章）」，这里补上走到第几章；
