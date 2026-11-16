@@ -25,11 +25,13 @@ Future<void> main() async {
   runApp(AutoChaoxingApp(
     api: ChaoxingApi(cookieJar: session.jar),
     session: session,
+    fontFamily: defaultAcxFontFamily(),
   ));
 }
 
 class AutoChaoxingApp extends StatefulWidget {
-  /// [state] 与 [fontFamily] 只给测试与视觉取证注入，正常运行都传 null。
+  /// [state] 供测试注入；[fontFamily] 正常运行时由 main 按平台传入，
+  /// 测试与视觉取证可以覆盖。
   const AutoChaoxingApp({
     super.key,
     this.state,

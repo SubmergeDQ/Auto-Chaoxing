@@ -24,8 +24,33 @@ Future<Directory?> resolveInstallDataDir() async {
     final File probe = File('${data.path}${Platform.pathSeparator}.write_probe');
     await probe.writeAsString('probe', flush: true);
     await probe.delete();
+    _installDataDir = data;
     return data;
   } catch (_) {
     return null;
+  }
+}
+
+Directory? _installDataDir;
+
+/// 当前安装版的数据目录；非 Windows 发布版或解析失败时为 null。
+Directory? get installDataDir => _installDataDir;
+
+/// 写一条本地诊断信息到 `<数据目录>\diagnostics\<name>.txt`。
+///
+/// 只写错误码、耗时与课程标识，不写 cookie、账号或密码。
+Future<void> writeAppDiagnostic(String name, String content) async {
+  final Directory? base = _installDataDir;
+  if (base == null) return;
+  try {
+    final Directory dir = Directory('${base.path}${Platform.pathSeparator}diagnostics');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    final File file = File('${dir.path}${Platform.pathSeparator}$name.txt');
+    await file.writeAsString(
+      '${DateTime.now().toIso8601String()}\n$content',
+      flush: true,
+    );
+  } catch (_) {
+    // 诊断信息写不进去不影响业务，也不能反过来让应用失败。
   }
 }

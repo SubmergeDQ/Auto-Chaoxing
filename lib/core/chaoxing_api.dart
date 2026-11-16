@@ -233,7 +233,9 @@ class ChaoxingApi {
           Course(
             courseId: courseId,
             classId: classId,
-            cpi: '${content['cpi'] ?? channel['cpi'] ?? ''}',
+            // cpi 是 gas/clazz 的 personid。个别响应把 personid 放在顶层，
+            // 取不到 cpi 时用它兜底，避免带着空 personid 去请求章节树。
+            cpi: '${content['cpi'] ?? channel['cpi'] ?? content['personid'] ?? channel['personid'] ?? ''}',
             name: '${c['name'] ?? '未命名课程'}',
             teacher: '${c['teacherfactor'] ?? ''}',
             archived: content['isFiled'] == 1 || content['isretire'] == 1,
@@ -266,6 +268,9 @@ class ChaoxingApi {
         },
         options: Options(
           headers: <String, dynamic>{'Referer': 'http://i.mooc.chaoxing.com'},
+          // 章节树在部分课程上明显比其他接口慢；25 秒会在返回前就断开，
+          // 用户看到的就是一直转圈后超时。单独放宽这一条。
+          receiveTimeout: const Duration(seconds: 45),
         ),
       );
       final String body = resp.data ?? '';
@@ -715,16 +720,14 @@ class ChaoxingApi {
 
   static bool _isDigits(String s) => s.isNotEmpty && int.tryParse(s) != null;
 
-  /// gas/clazz 的 fields：只取章节树需要的字段，避免整包响应过大。
+  /// gas/clazz 的 fields：只取章节树需要的字段。
+  ///
+  /// 之前照搬平台 App 的完整投影（含 attachment 子查询），在章节多的课程上
+  /// 服务端要遍历全部附件，实测会拖到超时。章节列表只用到 id / name / label /
+  /// parentnodeid / indexorder，其余字段不请求。
   static const String _chapterFields =
-      'id,bbsid,classscore,isstart,allowdownload,chatid,name,state,isfiled,'
-      'visiblescore,hideclazz,begindate,forbidintoclazz,'
-      'coursesetting.fields(id,courseid,hiddencoursecover,coursefacecheck),'
-      'course.fields(id,belongschoolid,name,infocontent,objectid,app,'
-      'bulletformat,mappingcourseid,imageurl,teacherfactor,jobcount,'
-      'knowledge.fields(id,name,indexOrder,parentnodeid,status,isReview,'
-      'layer,label,jobcount,begintime,endtime,'
-      'attachment.fields(id,type,objectid,extension).type(video)))';
+      'id,course.fields(id,name,knowledge.fields('
+      'id,name,indexOrder,parentnodeid,label))';
 
   /// 从 gas/clazz 的固定层级里取出 knowledge 节点：data[0].course.data[0].knowledge.data。
   static List<Map<String, dynamic>> _chapterNodes(Map<String, dynamic> json) {

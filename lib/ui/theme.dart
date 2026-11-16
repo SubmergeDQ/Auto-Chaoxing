@@ -1,5 +1,6 @@
 // 设计变量：页面只从这里取颜色、间距、圆角与动效时长，不在 Widget 里散落硬编码值。
 // 主色沿用项目原有的 seed 色 #2E7D6F；其余语义角色为本次补齐。
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class AcxSpacing {
@@ -111,6 +112,13 @@ class AcxStatusStyle {
         return Icons.radio_button_unchecked_rounded;
     }
   }
+}
+
+/// 桌面端默认字体对中文走系统回退，字重与行高和移动端不一致，看起来会「发飘」。
+/// 显式使用微软雅黑 UI；其它平台返回 null，继续用系统默认。
+String? defaultAcxFontFamily() {
+  if (defaultTargetPlatform != TargetPlatform.windows) return null;
+  return 'Microsoft YaHei UI';
 }
 
 /// [fontFamily] 仅供视觉取证测试注入中文字体；正常运行留空，走系统字体。

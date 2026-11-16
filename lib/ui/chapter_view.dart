@@ -235,7 +235,7 @@ class _ChapterLoadingViewState extends State<_ChapterLoadingView> {
           const Text('正在读取章节…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
           const SizedBox(height: AcxSpacing.xs),
           Text(
-            '已等待 $_seconds 秒 · 超过约 40 秒会自动转为失败并给重试',
+            '已等待 $_seconds 秒 · 超过约 60 秒会自动转为失败并给重试',
             style: const TextStyle(fontSize: 12, color: AcxColors.textTertiary),
           ),
         ],

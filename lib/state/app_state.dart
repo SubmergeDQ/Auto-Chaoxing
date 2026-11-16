@@ -11,6 +11,7 @@ import '../core/version.dart';
 
 import '../core/chaoxing_api.dart';
 import '../core/models.dart';
+import '../platform/app_paths.dart';
 import '../platform/keep_alive_settings.dart';
 import '../platform/session_store.dart';
 import '../platform/window_shell.dart';
@@ -527,6 +528,7 @@ class AppState extends ChangeNotifier {
     _notify();
 
     Result<List<Chapter>> r;
+    final Stopwatch watch = Stopwatch()..start();
     try {
       r = await api.fetchChapters(
         courseId: course.courseId,
@@ -537,9 +539,21 @@ class AppState extends ChangeNotifier {
       // 接口层的任何意外异常都要落到 error，不能让界面永远停在「正在读取章节」。
       r = Err<List<Chapter>>('parse', '章节读取异常：$e');
     }
+    watch.stop();
     if (r is Err<List<Chapter>>) {
       chaptersError = r.message;
       chaptersState = LoadState.error;
+      // 超时类问题只看界面文案没法判断卡在哪一步；落一份本地诊断，
+      // 下次复现后可以直接看耗时、cpi 是否存在与错误码。
+      unawaited(writeAppDiagnostic(
+        'chapter-error',
+        'course=${course.courseId}:${course.classId}\n'
+            'cpi=${course.cpi.isEmpty ? '<empty>' : 'present'}\n'
+            'archived=${course.archived}\n'
+            'elapsedMs=${watch.elapsedMilliseconds}\n'
+            'code=${r.code}\n'
+            'message=${r.message}',
+      ));
     } else {
       chapters = (r as Ok<List<Chapter>>).value;
       chaptersState = LoadState.ready;
