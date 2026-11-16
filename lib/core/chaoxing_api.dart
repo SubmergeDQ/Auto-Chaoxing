@@ -1,5 +1,6 @@
 // 学习通 HTTP 客户端：只负责请求、Cookie、解析与错误归一。
 // 不包含重试策略与业务循环（那是 task_runner 的事）。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -272,6 +273,11 @@ class ChaoxingApi {
           // 用户看到的就是一直转圈后超时。单独放宽这一条。
           receiveTimeout: const Duration(seconds: 45),
         ),
+      ).timeout(
+        // Dio 的 receiveTimeout 只覆盖「已经拿到响应头之后」的收包间隔；
+        // 服务端一直不返回响应头时会无限等待。这里加一个总时限兜底，
+        // 保证界面承诺的「约 60 秒失败并给重试」一定生效。
+        const Duration(seconds: 60),
       );
       final String body = resp.data ?? '';
       if (_looksLikeLogin(body)) {
@@ -306,6 +312,11 @@ class ChaoxingApi {
         out.add(Chapter(chapterId: id, title: _chapterTitle(n)));
       }
       return Ok<List<Chapter>>(out);
+    } on TimeoutException {
+      return const Err<List<Chapter>>(
+        'network',
+        '章节接口超过 60 秒没有响应，请检查手机网络或重新登录后重试',
+      );
     } on DioException catch (e) {
       return Err<List<Chapter>>('network', _netMessage(e));
     }
