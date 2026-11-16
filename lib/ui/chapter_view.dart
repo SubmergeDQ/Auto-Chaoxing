@@ -218,7 +218,19 @@ class _ChapterLoadingViewState extends State<_ChapterLoadingView> {
         children: <Widget>[
           const AcxStatusBadge(label: '读取中', status: AcxStatus.running),
           const SizedBox(height: AcxSpacing.xl),
-          const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
+          // 章节接口本身没有进度可读，用不定量进度条表示「还在走」：
+          // 静态转圈在等待十几秒时容易被当成卡死，进度条的位移更能说明没断。
+          SizedBox(
+            width: 220,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AcxRadius.sm),
+              child: const LinearProgressIndicator(
+                minHeight: 4,
+                backgroundColor: AcxColors.border,
+                valueColor: AlwaysStoppedAnimation<Color>(AcxColors.brand),
+              ),
+            ),
+          ),
           const SizedBox(height: AcxSpacing.lg),
           const Text('正在读取章节…', style: TextStyle(fontSize: 13, color: AcxColors.textSecondary)),
           const SizedBox(height: AcxSpacing.xs),

@@ -9,6 +9,8 @@ import 'package:auto_chaoxing/core/update/app_release.dart';
 import 'package:auto_chaoxing/state/app_state.dart';
 import 'package:auto_chaoxing/state/keep_alive_probe.dart';
 import 'package:auto_chaoxing/state/update_state.dart';
+import 'package:auto_chaoxing/ui/chapter_view.dart';
+import 'package:auto_chaoxing/ui/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -146,6 +148,28 @@ void main() {
       expect(find.text('课程列表读取失败'), findsOneWidget);
       expect(find.text('连接超时'), findsOneWidget);
       expect(find.text('重试'), findsOneWidget);
+    });
+
+    testWidgets('章节读取中显示进度条与已等待秒数', (WidgetTester tester) async {
+      // 章节接口慢时只有转圈会被当成卡死；回归一条：等待态必须有进度条。
+      final AppState state = courseSelectedState();
+      state.chaptersState = LoadState.loading;
+      state.chapters = <Chapter>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAcxTheme(),
+          home: ChapterDetailPage(state: state),
+        ),
+      );
+
+      expect(find.text('正在读取章节…'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.textContaining('已等待'), findsOneWidget);
+
+      // 销毁页面，取消等待计时器，避免 pending timer 让用例收尾失败。
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
     });
   });
 
