@@ -67,6 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [android, windows]
     steps:
+      # 发布说明从 CHANGELOG.md 提取，publish job 也需要仓库内容。
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
