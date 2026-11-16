@@ -70,8 +70,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # 发布说明直接取 CHANGELOG 里对应版本的段落：内容由人写，格式与仓库记录一致。
+      - name: Extract release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          awk -v ver="$VERSION" 'index($0, "## " ver " ") == 1 {flag=1; next} /^## / {if (flag) exit} flag' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "CHANGELOG.md 缺少 $VERSION 段落"; exit 1; }
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" $(find artifacts -type f) --title "$TAG" --generate-notes
+        run: gh release create "$TAG" $(find artifacts -type f) --title "$TAG" --notes-file release-notes.md
