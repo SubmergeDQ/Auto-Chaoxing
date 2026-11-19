@@ -33,7 +33,7 @@ class _AccountSwitcherDialogState extends State<_AccountSwitcherDialog> {
   AppState get _state => widget.state;
 
   Future<void> _switch(String uid, String name) async {
-    if (_busy) return;
+    if (_busy || _state.quiz.busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -54,7 +54,7 @@ class _AccountSwitcherDialogState extends State<_AccountSwitcherDialog> {
   }
 
   Future<void> _remove(StoredAccount account) async {
-    if (_busy) return;
+    if (_busy || _state.quiz.busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -67,7 +67,8 @@ class _AccountSwitcherDialogState extends State<_AccountSwitcherDialog> {
   Future<void> _addAccount() async {
     // 直接叠一层登录框：登录成功后账号列表会通过 AnimatedBuilder 自动刷新，
     // 不需要先关掉这个对话框再重开。
-    await showLoginDialog(context, _state);
+    // 这里必须清空预填：带着上一个账号的手机号会让新号码被追加成错误账号。
+    await showLoginDialog(context, _state, prefillUsername: false);
     if (mounted) setState(() {});
   }
 
@@ -106,7 +107,7 @@ class _AccountSwitcherDialogState extends State<_AccountSwitcherDialog> {
                       child: _AccountRow(
                         account: a,
                         current: a.uid == _state.activeUid && _state.signedIn,
-                        busy: _busy,
+                        busy: _busy || _state.quiz.busy,
                         onSwitch: () => _switch(a.uid, a.name),
                         onRemove: () => _remove(a),
                       ),
@@ -143,7 +144,7 @@ class _AccountSwitcherDialogState extends State<_AccountSwitcherDialog> {
           child: const Text('关闭'),
         ),
         FilledButton(
-          onPressed: _busy ? null : () => _addAccount(),
+          onPressed: (_busy || _state.quiz.busy) ? null : () => _addAccount(),
           child: const Text('添加账号'),
         ),
       ],

@@ -12,6 +12,7 @@ import '../core/homework_rules.dart';
 import '../core/models.dart';
 import '../state/app_state.dart';
 import '../state/homework_controller.dart';
+import 'quiz_dialog.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -95,14 +96,19 @@ class _HomeworkPageState extends State<HomeworkPage> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    '点「打开作答页」会在浏览器里打开；浏览器里需要已登录学习通，'
-                    '提交也在那边完成',
+                    '「自动答题」会用万卷题库查答案并直接提交；'
+                    '「打开作答页」仍在浏览器里手动完成',
                     style: TextStyle(fontSize: 12, color: AcxColors.textTertiary),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: AcxSpacing.md),
+            IconButton(
+              onPressed: () => unawaited(showWanJuanTokenDialog(context, widget.state)),
+              icon: const Icon(Icons.vpn_key_outlined, size: 18),
+              tooltip: '题库 Token',
+            ),
             OutlinedButton.icon(
               onPressed: _homework.loading ? null : () => unawaited(_homework.refresh()),
               icon: const Icon(Icons.refresh_rounded, size: 18),
@@ -141,15 +147,23 @@ class _HomeworkPageState extends State<HomeworkPage> {
               child: _HomeworkCard(
                 item: item,
                 onOpen: () => unawaited(_openHomework(item)),
+                onAuto: () => unawaited(
+                  startAutoQuiz(
+                    context,
+                    widget.state,
+                    course: widget.course,
+                    item: item,
+                  ),
+                ),
               ),
             ),
           ),
         const SizedBox(height: AcxSpacing.md),
         const Text(
-          '本客户端不代提交作业：作答页的提交字段还没实测确认，'
-          '猜字段会出现「本地以为交了、平台没收到」。'
-          '在网页里提交后回到这里刷新，以平台状态为准。'
-          '如果浏览器未登录学习通，先登录再打开作答页。',
+          '自动答题会把题库匹配到的答案填入并直接提交，未匹配的题会留空；'
+          '提交结果以平台回执和作业列表状态为准。'
+          '题库是第三方收费服务，Token 与扣费由你自己在万卷题库管理。'
+          '网页作答入口仍可在浏览器里手动完成。',
           style: TextStyle(fontSize: 12, height: 1.7, color: AcxColors.textTertiary),
         ),
       ],
@@ -158,10 +172,15 @@ class _HomeworkPageState extends State<HomeworkPage> {
 }
 
 class _HomeworkCard extends StatelessWidget {
-  const _HomeworkCard({required this.item, required this.onOpen});
+  const _HomeworkCard({
+    required this.item,
+    required this.onOpen,
+    required this.onAuto,
+  });
 
   final HomeworkItem item;
   final VoidCallback onOpen;
+  final VoidCallback onAuto;
 
   @override
   Widget build(BuildContext context) {
@@ -209,13 +228,28 @@ class _HomeworkCard extends StatelessWidget {
             style: const TextStyle(fontSize: 12, color: AcxColors.textSecondary),
           ),
           const SizedBox(height: AcxSpacing.md),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: onOpen,
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('打开作答页'),
-            ),
+          Wrap(
+            spacing: AcxSpacing.sm,
+            runSpacing: AcxSpacing.sm,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: onOpen,
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: const Text('打开作答页'),
+              ),
+              Tooltip(
+                message: done == true
+                    ? '这份作业已提交，不重复提交'
+                    : item.expired
+                        ? '已过截止时间，平台可能不再接收'
+                        : '用万卷题库查答案并直接提交',
+                child: FilledButton.icon(
+                  onPressed: (done == true || item.expired) ? null : onAuto,
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                  label: const Text('自动答题'),
+                ),
+              ),
+            ],
           ),
         ],
       ),

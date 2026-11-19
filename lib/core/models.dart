@@ -249,6 +249,113 @@ class HomeworkItem {
   }
 }
 
+/// 作业/章节测验的题型。数值与平台 `answertype` 一致。
+enum HomeworkQuestionType {
+  single(0),
+  multiple(1),
+  fill(2),
+  judge(3),
+  short(4),
+  unknown(-1);
+
+  const HomeworkQuestionType(this.code);
+
+  final int code;
+
+  static HomeworkQuestionType fromCode(int code) {
+    for (final HomeworkQuestionType t in HomeworkQuestionType.values) {
+      if (t.code == code) return t;
+    }
+    return HomeworkQuestionType.unknown;
+  }
+}
+
+class HomeworkOption {
+  const HomeworkOption({
+    required this.key,
+    required this.text,
+    this.value = '',
+  });
+
+  /// 选项字母 A/B/C/D。
+  final String key;
+
+  /// 选项正文（不含字母）。
+  final String text;
+
+  /// 判断题的 val-param（true/false）；选择题为空。
+  final String value;
+}
+
+class HomeworkQuestion {
+  const HomeworkQuestion({
+    required this.id,
+    required this.type,
+    required this.text,
+    this.options = const <HomeworkOption>[],
+    this.blanks = const <String>[],
+  });
+
+  final String id;
+  final HomeworkQuestionType type;
+  final String text;
+  final List<HomeworkOption> options;
+
+  /// 填空题每个空的提交字段名（`answer<qid><n>`），按顺序排列。
+  final List<String> blanks;
+
+  bool get answerable =>
+      type == HomeworkQuestionType.single ||
+      type == HomeworkQuestionType.multiple ||
+      type == HomeworkQuestionType.fill ||
+      type == HomeworkQuestionType.judge ||
+      type == HomeworkQuestionType.short;
+}
+
+/// 一份作业作答页：隐藏字段 + 识别出的题目。
+///
+/// 隐藏字段是平台提交接口的必填票据，页面自己也会原样回传；
+/// 这里不猜字段含义，只按页面给的键值保存。
+class HomeworkPaper {
+  const HomeworkPaper({
+    required this.sourceUrl,
+    required this.fields,
+    required this.questions,
+  });
+
+  final String sourceUrl;
+  final Map<String, String> fields;
+  final List<HomeworkQuestion> questions;
+
+  String field(String key) => fields[key] ?? '';
+
+  /// 题库接口用的作业 id。页面通常给 oldWorkId（题库库 id），
+  /// 没有时退回 workLibraryId / workId。
+  String get workId {
+    for (final String key in <String>['oldWorkId', 'workLibraryId', 'workId']) {
+      final String v = field(key).trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  int get answerableCount =>
+      questions.where((HomeworkQuestion q) => q.answerable).length;
+}
+
+/// 作业提交的结果。`ok == null` 表示请求发出去了，但平台没有给出明确回执。
+class HomeworkSubmitResult {
+  const HomeworkSubmitResult({
+    required this.ok,
+    required this.message,
+    this.raw = '',
+  });
+
+  final bool? ok;
+  final String message;
+  final String raw;
+}
+
 /// 从 knowledge/cards 的 HTML 里抠出 mArg JSON。
 /// 页面结构：try{ ... mArg = {...}; }catch(e){ ... }
 Map<String, dynamic>? extractMarg(String html) {

@@ -19,6 +19,7 @@ import '../platform/platform_services.dart';
 import '../platform/run_keeper_android.dart';
 import 'homework_controller.dart';
 import 'keep_alive_probe.dart';
+import 'quiz_controller.dart';
 import 'run_controller.dart';
 import 'sign_controller.dart';
 import 'update_state.dart';
@@ -58,6 +59,7 @@ class AppState extends ChangeNotifier {
       isRunBusy: () => run.busy,
     );
     homework = HomeworkController(api: this.api, onChanged: _notify);
+    quiz = QuizController(api: this.api, onChanged: _notify);
 
     // 安装更新前把后台任务停下来：执行中的章节、签到监听、前台服务都要收尾，
     // 否则安装器覆盖不了正在运行的 exe，或把一次执行打断在半路。
@@ -124,8 +126,11 @@ class AppState extends ChangeNotifier {
   /// 签到：活动列表、手动签到与前台轮询。
   late final SignController sign;
 
-  /// 作业：只读列表，提交在网页里完成。
+  /// 作业：列表 + 网页入口。
   late final HomeworkController homework;
+
+  /// 自动刷题：题库查答案、回填并提交。
+  late final QuizController quiz;
 
   /// 检查更新。放在 AppState：启动时的自动检查与关于页的手动检查要共用
   /// 同一个节流时间戳，否则「5 分钟只查一次」在两边各算各的。
@@ -147,6 +152,7 @@ class AppState extends ChangeNotifier {
     run.dispose();
     sign.dispose();
     homework.dispose();
+    quiz.dispose();
     unawaited(windowShell.dispose());
     runKeeper.dispose();
     super.dispose();
@@ -187,6 +193,7 @@ class AppState extends ChangeNotifier {
   /// 用户此刻只是想打开应用，不是想听一次失败通知。
   Future<void> bootstrap() async {
     await _loadRememberedUsername();
+    await _loadWanJuanToken();
     // 自动检查更新不 await：开屏不该等 GitHub。内部有 5 分钟节流，
     // 连续开合应用不会反复打接口。
     unawaited(update.checkForUpdates());
@@ -297,6 +304,35 @@ class AppState extends ChangeNotifier {
 
   static const String _kLastUsername = 'last_username';
 
+  /// 万卷题库 Token。只存在本机偏好里，不上传、不写日志。
+  String wanjuanToken = '';
+
+  static const String _kWanJuanToken = 'wanjuan_token';
+
+  Future<void> _loadWanJuanToken() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? saved = prefs.getString(_kWanJuanToken);
+      if (saved != null && saved.isNotEmpty) {
+        wanjuanToken = saved;
+        _notify();
+      }
+    } catch (_) {
+      // 测试环境没有平台通道，读不到就按未配置处理。
+    }
+  }
+
+  Future<void> saveWanJuanToken(String token) async {
+    wanjuanToken = token.trim();
+    _notify();
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kWanJuanToken, wanjuanToken);
+    } catch (_) {
+      // 记不住只影响下次启动，不影响本次刷题。
+    }
+  }
+
   Future<void> restoreSession() async {
     if (restoringSession || signedIn) return;
     if (!await api.hasSession()) return;
@@ -361,6 +397,7 @@ class AppState extends ChangeNotifier {
   Future<String?> signIn(String username, String password) async {
     // 登录新账号会清空当前账号的会话与执行状态，不能静默打断正在跑的章节。
     if (run.busy) return '正在执行章节，请先停止再登录新账号';
+    if (quiz.busy) return '正在自动答题，请先停止再登录新账号';
 
     final SessionJar? store = session;
     final bool usePending = store != null && store.supported;
@@ -401,6 +438,7 @@ class AppState extends ChangeNotifier {
     run.reset();
     sign.reset();
     homework.reset();
+    quiz.reset();
     profile = null;
     avatarBytes = null;
     _avatarToken++;
@@ -425,6 +463,7 @@ class AppState extends ChangeNotifier {
   Future<String?> switchAccount(String uid, {bool silent = false}) async {
     if (switchingAccount) return '正在切换账号';
     if (run.busy) return '正在执行章节，请先停止再切换账号';
+    if (quiz.busy) return '正在自动答题，请先停止再切换账号';
     final SessionJar? store = session;
     if (store == null || !store.supported) return '当前环境不支持切换账号';
     if (_findAccount(uid) == null) return '账号不存在';
@@ -462,6 +501,8 @@ class AppState extends ChangeNotifier {
 
   /// 断开当前账号：删掉它的 cookie 文件，但保留账号记录，方便下次快速重登。
   Future<void> signOut() async {
+    // 自动答题正在使用当前会话，断开会让提交打到空 cookie 上。
+    if (quiz.busy) return;
     final String? uid = activeUid ?? profile?.uid;
     _resetAccountScopedState();
     final SessionJar? store = session;
@@ -476,6 +517,7 @@ class AppState extends ChangeNotifier {
 
   /// 从账号列表里彻底移除一个账号（会话文件 + 索引记录）。
   Future<void> removeAccount(String uid) async {
+    if (quiz.busy) return;
     final bool current = uid == activeUid || uid == profile?.uid;
     if (current) _resetAccountScopedState();
     final SessionJar? store = session;
@@ -490,6 +532,7 @@ class AppState extends ChangeNotifier {
 
   /// 清除本机全部账号与会话（隐私页）。
   Future<void> signOutAll() async {
+    if (quiz.busy) return;
     _resetAccountScopedState();
     accounts = <StoredAccount>[];
     final SessionJar? store = session;

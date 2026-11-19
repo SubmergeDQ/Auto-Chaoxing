@@ -10,6 +10,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
 import 'crypto.dart';
 import 'homework_rules.dart';
+import 'homework_submit.dart';
 import 'models.dart';
 import 'sign_rules.dart';
 
@@ -130,16 +131,26 @@ class ChaoxingApi {
       if (json == null) {
         return const Err<Profile>('parse', '登录响应无法解析');
       }
-      if (json['status'] == true) {
+      if (_truthy(json['status'])) {
         final Result<Profile> me = await fetchProfile();
         return me;
       }
-      final String msg = '${json['msg2'] ?? json['mes'] ?? json['msg'] ?? '登录失败'}';
-      if (json['needVcode'] == true ||
-          json['containTwoFactorLogin'] == true ||
-          json['weakpwd'] == true ||
-          json['passwordTimeout'] == true) {
-        return Err<Profile>('needsAttention', msg.isEmpty ? '需要验证码或二次验证' : msg);
+      // msg2 可能是空串，不能直接 ?? 到 mes：那会把真正的错误信息盖掉。
+      final String msg = <dynamic>[json['msg2'], json['mes'], json['msg'], json['message']]
+          .map((dynamic v) => '${v ?? ''}'.trim())
+          .firstWhere((String s) => s.isNotEmpty, orElse: () => '登录失败');
+      // 平台有时不给 needVcode 之类的布尔位，只在文案里说「需要验证」。
+      // 只看字段会把这类响应误报成「账号或密码错误」。
+      final bool needsHuman = _truthy(json['needVcode']) ||
+          _truthy(json['containTwoFactorLogin']) ||
+          _truthy(json['weakpwd']) ||
+          _truthy(json['passwordTimeout']) ||
+          RegExp(
+            r'验证码|滑块|拼图|安全验证|captcha|二次|双因子|身份验证|统一认证',
+            caseSensitive: false,
+          ).hasMatch(msg);
+      if (needsHuman) {
+        return Err<Profile>('needsAttention', msg);
       }
       return Err<Profile>('api', msg);
     } on DioException catch (e) {
@@ -700,7 +711,110 @@ class ChaoxingApi {
     }
   }
 
+  /// 读取作业作答页 HTML。解析交给 homework_paper.dart。
+  Future<Result<String>> fetchHomeworkPage({
+    required Course course,
+    required String workId,
+  }) async {
+    try {
+      final Response<String> resp = await _dio.get<String>(
+        homeworkPageUrl(course: course, workId: workId),
+        options: Options(
+          headers: <String, dynamic>{'Referer': 'https://mooc1.chaoxing.com/'},
+        ),
+      );
+      final String body = resp.data ?? '';
+      if (_looksLikeLogin(body)) {
+        return const Err<String>('authExpired', '登录已失效');
+      }
+      if (body.trim().isEmpty) {
+        return const Err<String>('parse', '作业页返回为空');
+      }
+      return Ok<String>(body);
+    } on DioException catch (e) {
+      return Err<String>('network', _netMessage(e));
+    }
+  }
+
+  /// 提交作业答案。
+  ///
+  /// 字段与顺序来自平台作答页和公开的移动端实现：先把页面隐藏票据原样回传，
+  /// 再按题型写 `answer<qid>` / `answertype<qid>`。判断题写 true/false，
+  /// 选择题写选项字母，填空题按空位写 `answer<qid><n>`。
+  Future<Result<HomeworkSubmitResult>> submitHomework({
+    required Course course,
+    required HomeworkPaper paper,
+    required Map<String, String> answers,
+    required String userId,
+    bool submit = true,
+  }) async {
+    final Result<HomeworkSubmitForm> built = buildHomeworkSubmitForm(
+      course: course,
+      paper: paper,
+      answers: answers,
+      userId: userId,
+      submit: submit,
+    );
+    if (built is Err<HomeworkSubmitForm>) {
+      return Err<HomeworkSubmitResult>(built.code, built.message);
+    }
+    final HomeworkSubmitForm payload = (built as Ok<HomeworkSubmitForm>).value;
+
+    try {
+      final FormData form = FormData();
+      for (final MapEntry<String, String> e in payload.fields.entries) {
+        form.fields.add(MapEntry<String, String>(e.key, e.value));
+      }
+
+      final Response<String> resp = await _dio.post<String>(
+        payload.path,
+        queryParameters: payload.query,
+        data: form,
+        options: Options(
+          headers: <String, dynamic>{
+            'Referer': paper.sourceUrl,
+            'Origin': 'https://mooc1.chaoxing.com',
+          },
+        ),
+      );
+
+      final String body = resp.data ?? '';
+      if (_looksLikeLogin(body) || resp.statusCode == 401 || resp.statusCode == 403) {
+        return const Err<HomeworkSubmitResult>('authExpired', '登录已失效或没有提交权限');
+      }
+      final bool? ok;
+      if (RegExp(r'"status"\s*:\s*true').hasMatch(body) ||
+          RegExp(r'"success"\s*:\s*true').hasMatch(body) ||
+          body.contains('提交成功') ||
+          body.contains('保存成功')) {
+        ok = true;
+      } else if (RegExp(r'"status"\s*:\s*false').hasMatch(body) ||
+          RegExp(r'"success"\s*:\s*false').hasMatch(body)) {
+        ok = false;
+      } else {
+        ok = null;
+      }
+      final String message = ok == true
+          ? (submit ? '已提交' : '已保存')
+          : ok == false
+              ? (_jsonMessage(body) ?? '平台拒绝了提交')
+              : '平台未返回明确结果，请到作业列表确认';
+      return Ok<HomeworkSubmitResult>(
+        HomeworkSubmitResult(ok: ok, message: message, raw: body),
+      );
+    } on DioException catch (e) {
+      return Err<HomeworkSubmitResult>('network', _netMessage(e));
+    }
+  }
+
   // ---------------------------------------------------------------- 工具
+
+  /// 从 JSON 响应里取 msg/message，取不到返回 null。
+  static String? _jsonMessage(String body) {
+    final RegExpMatch? m = RegExp(r'"(?:msg|message)"\s*:\s*"([^"]*)"').firstMatch(body);
+    final String? msg = m?.group(1)?.trim();
+    return msg == null || msg.isEmpty ? null : msg;
+  }
 
   /// 把 Dio 的异常翻成人能读的中文。
   ///
@@ -730,6 +844,10 @@ class ChaoxingApi {
       _authExpiredMarkers.any((String m) => body.contains(m));
 
   static bool _isDigits(String s) => s.isNotEmpty && int.tryParse(s) != null;
+
+  /// 平台同一语义的开关有 true / 1 / "1" / "true" 几种写法。
+  static bool _truthy(Object? v) =>
+      v == true || v == 1 || '$v' == '1' || '$v' == 'true';
 
   /// gas/clazz 的 fields：只取章节树需要的字段。
   ///

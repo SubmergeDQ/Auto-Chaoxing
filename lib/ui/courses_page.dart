@@ -325,34 +325,73 @@ class _CourseTile extends StatelessWidget {
 }
 
 /// 登录对话框的唯一入口：课程页空白态与设置页都用它，措辞和校验只有一份。
-Future<void> showLoginDialog(BuildContext context, AppState state) {
+///
+/// [prefillUsername] 只在「本机还没登录」时为 true。添加第二个账号时必须留空：
+/// 否则输入框里带着上一个账号的手机号，新号码会被接在后面，提交出去就是
+/// 一个不存在的长账号，平台只会回「账号或密码错误」。
+Future<void> showLoginDialog(
+  BuildContext context,
+  AppState state, {
+  bool prefillUsername = true,
+}) {
   return showDialog<void>(
     context: context,
-    builder: (BuildContext _) => LoginDialog(state: state),
+    builder: (BuildContext _) => LoginDialog(
+      state: state,
+      prefillUsername: prefillUsername,
+    ),
   );
 }
 
 /// 登录对话框公开给设置页复用，断开连接后可以就地重新连接。
 class LoginDialog extends StatefulWidget {
-  const LoginDialog({super.key, required this.state});
+  const LoginDialog({
+    super.key,
+    required this.state,
+    this.prefillUsername = true,
+  });
 
   final AppState state;
+  final bool prefillUsername;
 
   @override
   State<LoginDialog> createState() => _LoginDialogState();
 }
 
 class _LoginDialogState extends State<LoginDialog> {
-  late final TextEditingController _username =
-      TextEditingController(text: widget.state.lastUsername);
+  late final TextEditingController _username = TextEditingController(
+    text: widget.prefillUsername ? widget.state.lastUsername : '',
+  );
   final TextEditingController _password = TextEditingController();
+  final FocusNode _usernameFocus = FocusNode();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
 
   bool _busy = false;
   String? _error;
 
+  /// 预填的账号首次获得焦点时全选，用户直接输入就会整体替换，
+  /// 不会在旧号码后面追加。只做一次，之后再点回来仍可正常编辑。
+  bool _selectedPrefill = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameFocus.addListener(_selectPrefillOnce);
+  }
+
+  void _selectPrefillOnce() {
+    if (_selectedPrefill || !_usernameFocus.hasFocus) return;
+    _selectedPrefill = true;
+    if (_username.text.isEmpty) return;
+    _username.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _username.text.length,
+    );
+  }
+
   @override
   void dispose() {
+    _usernameFocus.dispose();
     _username.dispose();
     _password.dispose();
     super.dispose();
@@ -403,11 +442,16 @@ class _LoginDialogState extends State<LoginDialog> {
               const SizedBox(height: AcxSpacing.xl),
               TextFormField(
                 controller: _username,
+                focusNode: _usernameFocus,
                 enabled: !_busy,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: '手机号', hintText: '登录用的手机号'),
+                // 不能锁成 phone：学号或邮箱账号在手机端会被数字键盘挡住。
+                keyboardType: TextInputType.text,
+                decoration: const InputDecoration(
+                  labelText: '手机号 / 账号',
+                  hintText: '登录用的手机号或账号',
+                ),
                 validator: (String? v) =>
-                    (v == null || v.trim().isEmpty) ? '请输入手机号' : null,
+                    (v == null || v.trim().isEmpty) ? '请输入手机号或账号' : null,
               ),
               const SizedBox(height: AcxSpacing.lg),
               TextFormField(

@@ -28,6 +28,8 @@ dependencies:
   url_launcher: ^6.3.3
   window_manager: ^0.6.0
   tray_manager: ^0.8.3
+  # 作业作答页解析（纯 Dart，不引入 WebView）
+  html: ^0.15.7
   # 平台能力（按需启用，未启用前不影响编译）
   # flutter_foreground_task: any      # Android 前台服务
   # flutter_inappwebview: any         # Android 登录/作业提交

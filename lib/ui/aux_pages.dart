@@ -212,7 +212,7 @@ class _AccountCard extends StatelessWidget {
                     child: const Text('切换账号'),
                   ),
                 TextButton(
-                  onPressed: () => unawaited(state.signOut()),
+                  onPressed: state.quiz.busy ? null : () => unawaited(state.signOut()),
                   child: const Text('断开连接'),
                 ),
               ] else if (!state.restoringSession) ...<Widget>[
@@ -416,7 +416,7 @@ class PrivacyPage extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
-              onPressed: state.signedIn || state.accounts.isNotEmpty
+              onPressed: (state.signedIn || state.accounts.isNotEmpty) && !state.quiz.busy
                   ? () => unawaited(state.signOutAll())
                   : null,
               icon: const Icon(Icons.delete_outline_rounded, size: 18),
